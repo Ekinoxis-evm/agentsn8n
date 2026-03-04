@@ -1,0 +1,342 @@
+{
+  "name": "03 - Multas de Tránsito",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Resolución de Multas de Tránsito — Ekinoxis",
+        "formDescription": "Todos los datos son obligatorios para que el Derecho de Petición no sea rechazado por falta de legitimidad.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Nombres Completos",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "Como aparecen en documento de identidad"
+            },
+            {
+              "fieldLabel": "Apellidos Completos",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Tipo de Documento",
+              "fieldType": "dropdown",
+              "requiredField": true,
+              "fieldOptions": {
+                "values": [
+                  { "option": "Cédula de Ciudadanía" },
+                  { "option": "Pasaporte" },
+                  { "option": "Cédula de Extranjería" }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Número de Documento",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Lugar de Expedición",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Dirección de Domicilio",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Departamento",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Ciudad",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Correo Electrónico",
+              "fieldType": "email",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Número de Celular",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Placas del Vehículo",
+              "fieldType": "text",
+              "requiredField": false,
+              "placeholder": "Ej: ABC123 — Opcional"
+            },
+            {
+              "fieldLabel": "Organismo de Tránsito",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "Ciudad o entidad donde fue impuesta la multa"
+            },
+            {
+              "fieldLabel": "¿Tiene Cobro Coactivo?",
+              "fieldType": "dropdown",
+              "requiredField": true,
+              "fieldOptions": {
+                "values": [
+                  { "option": "Sí" },
+                  { "option": "No" },
+                  { "option": "No sabe" }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Formulario Multas",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [240, 300],
+      "webhookId": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst caseId = 'MT-' + Date.now();\nconst timestamp = new Date().toISOString();\nconst fecha = new Date().toLocaleDateString('es-CO', {timeZone: 'America/Bogota'});\n\nreturn [{\n  json: {\n    caseId,\n    timestamp,\n    fecha,\n    nombres: data['Nombres Completos']?.trim() || '',\n    apellidos: data['Apellidos Completos']?.trim() || '',\n    tipoDocumento: data['Tipo de Documento'] || '',\n    numeroDocumento: data['Número de Documento']?.trim() || '',\n    lugarExpedicion: data['Lugar de Expedición']?.trim() || '',\n    direccion: data['Dirección de Domicilio']?.trim() || '',\n    departamento: data['Departamento']?.trim() || '',\n    ciudad: data['Ciudad']?.trim() || '',\n    email: data['Correo Electrónico']?.trim().toLowerCase() || '',\n    celular: data['Número de Celular']?.trim() || '',\n    placasVehiculo: data['Placas del Vehículo']?.trim() || 'No informadas',\n    organismoTransito: data['Organismo de Tránsito']?.trim() || '',\n    cobroCoactivo: data['¿Tiene Cobro Coactivo?'] || 'No sabe',\n    nombreCompleto: (data['Nombres Completos'] + ' ' + data['Apellidos Completos']).trim(),\n    estado: 'Nuevo - Diagnóstico Gratuito Pendiente',\n    etapa: 1,\n    tipoCaso: 'Multas de Tránsito'\n  }\n}];"
+      },
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "Validar y Formatear",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Traffic_Fines_Cases",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "name": "Guardar en Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [800, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "agentType": "toolsAgent",
+        "text": "=Cliente: {{ $('Validar y Formatear').item.json.nombreCompleto }}\nDocumento: {{ $('Validar y Formatear').item.json.tipoDocumento }} {{ $('Validar y Formatear').item.json.numeroDocumento }}\nCiudad: {{ $('Validar y Formatear').item.json.ciudad }}, {{ $('Validar y Formatear').item.json.departamento }}\nPlacas: {{ $('Validar y Formatear').item.json.placasVehiculo }}\nOrganismo de Tránsito: {{ $('Validar y Formatear').item.json.organismoTransito }}\nCobro Coactivo: {{ $('Validar y Formatear').item.json.cobroCoactivo }}\nNúmero de caso: {{ $('Validar y Formatear').item.json.caseId }}\nFecha: {{ $('Validar y Formatear').item.json.fecha }}\n\nGenera el diagnóstico gratuito para este cliente con multas de tránsito.",
+        "promptType": "define",
+        "options": {
+          "systemMessage": "Eres un abogado especialista en derecho de tránsito y Derechos de Petición en Colombia. Conoces el Código Nacional de Tránsito (Ley 769 de 2002), el proceso de cobro coactivo, las fechas de prescripción de multas, y los organismos de tránsito de todas las ciudades de Colombia.\n\nTAREA: Genera un diagnóstico gratuito inicial para el cliente con multas de tránsito.\n\nPROCESO:\n- Paso 1 (GRATUITO): Diagnóstico — valor estimado multas + intereses, estado cobro coactivo, fechas clave\n- Paso 2: Proceso formal — 50% del valor ahorrado — Borrador Derecho de Petición\n- Paso 3: Cierre — 50% del ahorro restante — Documento Paz y Salvo\n\nINFORMACIÓN IMPORTANTE sobre Colombia:\n- Las multas de tránsito prescriben a los 3 años desde la notificación\n- El cobro coactivo añade intereses y honorarios (generalmente 15-20% adicional)\n- El Derecho de Petición debe responderse en 15 días hábiles\n- Organismos principales: SDM Bogotá, Tránsito Medellín, DATT Barranquilla, SIMUR Cali\n\nRESPONDE en JSON:\n{\n  \"diagnosticoGratuito\": {\n    \"resumen\": \"<resumen del caso>\",\n    \"advertenciaCobroCoactivo\": \"<si tiene cobro coactivo, urgencia>\",\n    \"posibilidadPrescripcion\": \"<evaluación de si puede haber prescripción>\",\n    \"documentosNecesarios\": [\"<doc 1>\", \"<doc 2>\", \"<doc 3>\"],\n    \"plazoRecomendado\": \"<tiempo recomendado para actuar>\"\n  },\n  \"estimadoAhorro\": \"<rango estimado de ahorro posible>\",\n  \"siguientesPasos\": \"<descripción del Paso 2>\",\n  \"mensajePersonalizado\": \"<mensaje cálido y profesional en español para el cliente>\"\n}"
+        }
+      },
+      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "name": "Agente Diagnóstico IA",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [1080, 300]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-6",
+        "options": {}
+      },
+      "id": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+      "name": "Modelo Claude",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.2,
+      "position": [1080, 560],
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-cred",
+          "name": "Anthropic"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiOutput = $input.first().json.output || $input.first().json.text || '';\nconst client = $('Validar y Formatear').first().json;\nlet diagnosis;\ntry {\n  const match = aiOutput.match(/\\{[\\s\\S]*\\}/);\n  diagnosis = match ? JSON.parse(match[0]) : { diagnosticoGratuito: { resumen: aiOutput } };\n} catch(e) {\n  diagnosis = { diagnosticoGratuito: { resumen: aiOutput } };\n}\n\nconst urgencyColor = client.cobroCoactivo === 'Sí' ? '#d32f2f' : '#1a3a5c';\nconst urgencyMessage = client.cobroCoactivo === 'Sí' ? \n  '⚠️ URGENTE: Su caso tiene Cobro Coactivo activo. Es importante actuar pronto.' : \n  'Su caso ha sido registrado y ha recibido diagnóstico gratuito.';\n\nconst emailHtml = `\n<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background: ${urgencyColor}; padding: 20px; text-align: center;\">\n    <h1 style=\"color: white; margin: 0;\">Multas de Tránsito</h1>\n    <p style=\"color: #ffcccc; margin: 5px 0;\">Diagnóstico Gratuito — Ekinoxis</p>\n  </div>\n  <div style=\"padding: 30px; background: #f9f9f9;\">\n    <p>Estimado/a <strong>${client.nombres}</strong>,</p>\n    <p>${urgencyMessage}</p>\n    <div style=\"background: white; border-left: 4px solid ${urgencyColor}; padding: 15px; margin: 20px 0;\">\n      <h3 style=\"color: ${urgencyColor}; margin-top: 0;\">📋 Caso #${client.caseId} — Diagnóstico Gratuito</h3>\n      <p>${diagnosis.diagnosticoGratuito?.resumen || 'Su caso está siendo analizado.'}</p>\n      ${diagnosis.diagnosticoGratuito?.advertenciaCobroCoactivo ? `<p><strong>⚠️ Cobro Coactivo:</strong> ${diagnosis.diagnosticoGratuito.advertenciaCobroCoactivo}</p>` : ''}\n      <p><strong>Posibilidad de prescripción:</strong> ${diagnosis.diagnosticoGratuito?.posibilidadPrescripcion || 'Por determinar con documentos'}</p>\n    </div>\n    <div style=\"background: #fff3e0; padding: 15px; border-radius: 5px; margin: 15px 0;\">\n      <h4>📄 Documentos que necesitará:</h4>\n      <ul>${(diagnosis.diagnosticoGratuito?.documentosNecesarios || []).map(d => `<li>${d}</li>`).join('')}</ul>\n    </div>\n    <p><strong>Ahorro estimado:</strong> ${diagnosis.estimadoAhorro || 'Se calculará con los documentos'}</p>\n    <div style=\"background: #e8f5e9; padding: 15px; border-radius: 5px;\">\n      <h4 style=\"color: #2e7d32;\">Cómo continuar — Paso 2:</h4>\n      <p>${diagnosis.siguientesPasos || 'Contacte nuestro equipo para iniciar el proceso formal.'}</p>\n      <p><strong>Costo:</strong> Solo el 50% del valor que ahorre (paga solo si hay ahorro)</p>\n    </div>\n  </div>\n  <div style=\"background: ${urgencyColor}; padding: 15px; text-align: center;\">\n    <p style=\"color: white; margin: 0; font-size: 12px;\">© Ekinoxis | Para continuar con su caso, responda este correo</p>\n  </div>\n</div>`;\n\nreturn [{json: { ...client, diagnosis, emailHtml }}];"
+      },
+      "id": "a7b8c9d0-e1f2-3456-abcd-567890123456",
+      "name": "Formatear Diagnóstico",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1360, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.FROM_EMAIL }}",
+        "toEmail": "={{ $('Validar y Formatear').item.json.email }}",
+        "subject": "=Diagnóstico Gratuito Multas — Caso #{{ $('Validar y Formatear').item.json.caseId }}",
+        "emailFormat": "html",
+        "html": "={{ $json.emailHtml }}",
+        "options": {}
+      },
+      "id": "b8c9d0e1-f2a3-4567-bcde-678901234567",
+      "name": "Email Diagnóstico Gratuito",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1640, 300],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-cred",
+          "name": "Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.FROM_EMAIL }}",
+        "toEmail": "={{ $env.INTERNAL_EMAIL }}",
+        "subject": "=Nuevo Caso Multas: {{ $('Validar y Formatear').item.json.nombreCompleto }} | Cobro Coactivo: {{ $('Validar y Formatear').item.json.cobroCoactivo }}",
+        "emailFormat": "html",
+        "html": "=<div style=\"font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;\">\n  <div style=\"background: #1a3a5c; padding: 20px; text-align: center;\">\n    <h1 style=\"color: white; margin: 0;\">Nuevo Caso — Multas de Tránsito</h1>\n    <p style=\"color: #aaccee; margin: 5px 0;\">Alerta Interna Ekinoxis</p>\n  </div>\n  <div style=\"padding: 30px; background: #f5f5f5;\">\n    <h2 style=\"color: #1a3a5c;\">Datos del Cliente</h2>\n    <table style=\"width: 100%; border-collapse: collapse;\">\n      <tr style=\"background: white;\"><td style=\"padding: 8px; border: 1px solid #ddd; font-weight: bold;\">Caso ID</td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $('Validar y Formatear').item.json.caseId }}</td></tr>\n      <tr><td style=\"padding: 8px; border: 1px solid #ddd; font-weight: bold;\">Nombre Completo</td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $('Validar y Formatear').item.json.nombreCompleto }}</td></tr>\n      <tr style=\"background: white;\"><td style=\"padding: 8px; border: 1px solid #ddd; font-weight: bold;\">Documento</td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $('Validar y Formatear').item.json.tipoDocumento }} {{ $('Validar y Formatear').item.json.numeroDocumento }}</td></tr>\n      <tr><td style=\"padding: 8px; border: 1px solid #ddd; font-weight: bold;\">Lugar Expedición</td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $('Validar y Formatear').item.json.lugarExpedicion }}</td></tr>\n      <tr style=\"background: white;\"><td style=\"padding: 8px; border: 1px solid #ddd; font-weight: bold;\">Dirección</td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $('Validar y Formatear').item.json.direccion }}</td></tr>\n      <tr><td style=\"padding: 8px; border: 1px solid #ddd; font-weight: bold;\">Ciudad / Departamento</td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $('Validar y Formatear').item.json.ciudad }}, {{ $('Validar y Formatear').item.json.departamento }}</td></tr>\n      <tr style=\"background: white;\"><td style=\"padding: 8px; border: 1px solid #ddd; font-weight: bold;\">Correo Electrónico</td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $('Validar y Formatear').item.json.email }}</td></tr>\n      <tr><td style=\"padding: 8px; border: 1px solid #ddd; font-weight: bold;\">Celular</td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $('Validar y Formatear').item.json.celular }}</td></tr>\n      <tr style=\"background: white;\"><td style=\"padding: 8px; border: 1px solid #ddd; font-weight: bold;\">Placas del Vehículo</td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $('Validar y Formatear').item.json.placasVehiculo }}</td></tr>\n      <tr><td style=\"padding: 8px; border: 1px solid #ddd; font-weight: bold;\">Organismo de Tránsito</td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $('Validar y Formatear').item.json.organismoTransito }}</td></tr>\n      <tr style=\"background: {{ $('Validar y Formatear').item.json.cobroCoactivo === 'Sí' ? '#ffebee' : 'white' }};\"><td style=\"padding: 8px; border: 1px solid #ddd; font-weight: bold;\">Cobro Coactivo</td><td style=\"padding: 8px; border: 1px solid #ddd; color: {{ $('Validar y Formatear').item.json.cobroCoactivo === 'Sí' ? '#d32f2f' : 'inherit' }}; font-weight: {{ $('Validar y Formatear').item.json.cobroCoactivo === 'Sí' ? 'bold' : 'normal' }};\">{{ $('Validar y Formatear').item.json.cobroCoactivo }}</td></tr>\n      <tr><td style=\"padding: 8px; border: 1px solid #ddd; font-weight: bold;\">Estado</td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $('Validar y Formatear').item.json.estado }}</td></tr>\n      <tr style=\"background: white;\"><td style=\"padding: 8px; border: 1px solid #ddd; font-weight: bold;\">Fecha de Registro</td><td style=\"padding: 8px; border: 1px solid #ddd;\">{{ $('Validar y Formatear').item.json.fecha }}</td></tr>\n    </table>\n    <div style=\"margin-top: 20px; padding: 15px; background: #e3f2fd; border-radius: 5px;\">\n      <p style=\"margin: 0;\"><strong>Acción requerida:</strong> Revisar diagnóstico IA y dar seguimiento al cliente dentro de las próximas 24 horas.</p>\n    </div>\n  </div>\n  <div style=\"background: #1a3a5c; padding: 15px; text-align: center;\">\n    <p style=\"color: white; margin: 0; font-size: 12px;\">Sistema Automático Ekinoxis — No responder directamente</p>\n  </div>\n</div>",
+        "options": {}
+      },
+      "id": "c9d0e1f2-a3b4-5678-cdef-789012345678",
+      "name": "Notificación Interna",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1640, 560],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-cred",
+          "name": "Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "title": "Diagnóstico Gratuito Solicitado",
+        "message": "=Gracias, {{ $('Validar y Formatear').item.json.nombres }}!\n\n✅ Su solicitud de diagnóstico gratuito para Multas de Tránsito ha sido recibida.\n\n**Número de Caso:** {{ $('Validar y Formatear').item.json.caseId }}\n**Organismo de Tránsito:** {{ $('Validar y Formatear').item.json.organismoTransito }}\n**Cobro Coactivo:** {{ $('Validar y Formatear').item.json.cobroCoactivo }}\n\n📧 Hemos enviado el diagnóstico gratuito a: {{ $('Validar y Formatear').item.json.email }}\n\n**Próximos pasos:**\n1. Revise el correo con su diagnóstico gratuito\n2. Nuestro equipo se comunicará con usted en las próximas 24 horas\n3. Si desea continuar, procederemos con el proceso formal\n\n💡 **Recuerde:** Solo paga si hay ahorro en su caso.",
+        "options": {}
+      },
+      "id": "d0e1f2a3-b4c5-6789-defa-890123456789",
+      "name": "Respuesta Formulario",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 1,
+      "position": [1920, 300]
+    }
+  ],
+  "connections": {
+    "Formulario Multas": {
+      "main": [
+        [
+          {
+            "node": "Validar y Formatear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar y Formatear": {
+      "main": [
+        [
+          {
+            "node": "Guardar en Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en Sheets": {
+      "main": [
+        [
+          {
+            "node": "Agente Diagnóstico IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Diagnóstico IA": {
+      "main": [
+        [
+          {
+            "node": "Formatear Diagnóstico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo Claude": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente Diagnóstico IA",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Diagnóstico": {
+      "main": [
+        [
+          {
+            "node": "Email Diagnóstico Gratuito",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notificación Interna",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Diagnóstico Gratuito": {
+      "main": [
+        [
+          {
+            "node": "Respuesta Formulario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f1e2d3c4-b5a6-7890-fedc-ba9876543210",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "03ab4cd5-ef67-8901-abcd-ef2345678903",
+  "tags": [
+    {
+      "name": "legal",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}

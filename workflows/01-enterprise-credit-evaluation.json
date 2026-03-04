@@ -1,0 +1,693 @@
+{
+  "name": "01 - Evaluación Crediticia Empresarial",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Evaluación Crediticia Empresarial — Ekinoxis",
+        "formDescription": "Complete el formulario y adjunte los documentos requeridos para su evaluación crediticia empresarial.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Nombre de la Empresa",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "Razón social completa"
+            },
+            {
+              "fieldLabel": "NIT",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "Ej: 900123456-7"
+            },
+            {
+              "fieldLabel": "Año de Fundación",
+              "fieldType": "number",
+              "requiredField": true,
+              "placeholder": "Ej: 2015"
+            },
+            {
+              "fieldLabel": "Productos y Servicios",
+              "fieldType": "textarea",
+              "requiredField": true,
+              "placeholder": "Describa los principales productos y/o servicios que ofrece la empresa"
+            },
+            {
+              "fieldLabel": "Principales Clientes",
+              "fieldType": "textarea",
+              "requiredField": true,
+              "placeholder": "Liste los principales clientes o sectores a los que atiende"
+            },
+            {
+              "fieldLabel": "Principales Proveedores",
+              "fieldType": "textarea",
+              "requiredField": true,
+              "placeholder": "Liste los principales proveedores de la empresa"
+            },
+            {
+              "fieldLabel": "Canales de Distribución",
+              "fieldType": "textarea",
+              "requiredField": true,
+              "placeholder": "Describa cómo distribuye sus productos/servicios (directo, distribuidores, online, etc.)"
+            },
+            {
+              "fieldLabel": "Correo Electrónico de Contacto",
+              "fieldType": "email",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Teléfono de Contacto",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Certificado de Existencia y Representación Legal",
+              "fieldType": "file",
+              "requiredField": true,
+              "acceptFileTypes": ".pdf"
+            },
+            {
+              "fieldLabel": "Balance General (PDF)",
+              "fieldType": "file",
+              "requiredField": true,
+              "acceptFileTypes": ".pdf"
+            },
+            {
+              "fieldLabel": "Estado de Resultados (PDF)",
+              "fieldType": "file",
+              "requiredField": true,
+              "acceptFileTypes": ".pdf"
+            },
+            {
+              "fieldLabel": "Flujo de Caja (PDF)",
+              "fieldType": "file",
+              "requiredField": true,
+              "acceptFileTypes": ".pdf"
+            },
+            {
+              "fieldLabel": "RUT (PDF)",
+              "fieldType": "file",
+              "requiredField": true,
+              "acceptFileTypes": ".pdf"
+            }
+          ]
+        },
+        "options": {
+          "respondWithOptions": {
+            "values": {
+              "formSubmittedText": "Procesando su solicitud..."
+            }
+          }
+        }
+      },
+      "id": "form-trigger-01",
+      "name": "Formulario Empresa",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [240, 300],
+      "webhookId": "f1e2d3c4-b5a6-9780-fedc-ba9876543210"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst solicitudId = 'CRED-' + Date.now();\nconst timestamp = new Date().toISOString();\nconst fechaSolicitud = new Date().toLocaleDateString('es-CO', {timeZone: 'America/Bogota'});\nconst anioActual = new Date().getFullYear();\nconst aniosFundacion = anioActual - parseInt(data['Año de Fundación'] || anioActual);\n\nconst folderName = `${solicitudId}_${data['Nombre de la Empresa'].replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\\s]/g, '').substring(0, 50).trim()}`;\n\nreturn [{\n  json: {\n    solicitudId,\n    timestamp,\n    fechaSolicitud,\n    folderName,\n    empresa: data['Nombre de la Empresa']?.trim() || '',\n    nit: data['NIT']?.trim() || '',\n    anioFundacion: data['Año de Fundación'] || '',\n    aniosFundacion,\n    productosServicios: data['Productos y Servicios']?.trim() || '',\n    clientes: data['Principales Clientes']?.trim() || '',\n    proveedores: data['Principales Proveedores']?.trim() || '',\n    distribucion: data['Canales de Distribución']?.trim() || '',\n    email: data['Correo Electrónico de Contacto']?.trim().toLowerCase() || '',\n    telefono: data['Teléfono de Contacto']?.trim() || '',\n    estado: 'Nuevo - Documentos Recibidos'\n  }\n}];"
+      },
+      "id": "normalize-data-01",
+      "name": "Normalizar Datos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "name": "={{ $json.folderName }}",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "name"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_DRIVE_PARENT_FOLDER_ID }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "create-folder-01",
+      "name": "Crear Carpeta Empresa",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [800, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-cred-id",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-folder-id",
+              "name": "folderId",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-folder-url",
+              "name": "folderUrl",
+              "value": "={{ $json.webViewLink }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "include": "selected",
+        "options": {}
+      },
+      "id": "set-folder-id-01",
+      "name": "Guardar ID Carpeta",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1080, 300]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "name": "=01_Certificado_Existencia_{{ $('Normalizar Datos').item.json.nit }}.pdf",
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $json.folderId }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "upload-certificado-01",
+      "name": "Subir Certificado Existencia",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1360, 100],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-cred-id",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "name": "=02_Balance_General_{{ $('Normalizar Datos').item.json.nit }}.pdf",
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Guardar ID Carpeta').item.json.folderId }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "upload-balance-01",
+      "name": "Subir Balance General",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1360, 240],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-cred-id",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "name": "=03_Estado_Resultados_{{ $('Normalizar Datos').item.json.nit }}.pdf",
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Guardar ID Carpeta').item.json.folderId }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "upload-estado-01",
+      "name": "Subir Estado Resultados",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1360, 380],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-cred-id",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "name": "=04_Flujo_Caja_{{ $('Normalizar Datos').item.json.nit }}.pdf",
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Guardar ID Carpeta').item.json.folderId }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "upload-flujo-01",
+      "name": "Subir Flujo Caja",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1360, 520],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-cred-id",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "name": "=05_RUT_{{ $('Normalizar Datos').item.json.nit }}.pdf",
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Guardar ID Carpeta').item.json.folderId }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "upload-rut-01",
+      "name": "Subir RUT",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1360, 660],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-cred-id",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "merge-uploads-01",
+      "name": "Esperar Uploads",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1640, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "const normalizedData = $('Normalizar Datos').first().json;\nconst folderData = $('Guardar ID Carpeta').first().json;\n\nconst uploads = $input.all();\nconst fileUrls = {};\nuploads.forEach(item => {\n  if (item.json.webViewLink) {\n    if (item.json.name?.includes('Certificado')) fileUrls.certificadoUrl = item.json.webViewLink;\n    if (item.json.name?.includes('Balance')) fileUrls.balanceUrl = item.json.webViewLink;\n    if (item.json.name?.includes('Estado')) fileUrls.estadoResultadosUrl = item.json.webViewLink;\n    if (item.json.name?.includes('Flujo')) fileUrls.flujoCajaUrl = item.json.webViewLink;\n    if (item.json.name?.includes('RUT')) fileUrls.rutUrl = item.json.webViewLink;\n  }\n});\n\nreturn [{\n  json: {\n    ...normalizedData,\n    folderId: folderData.folderId,\n    folderUrl: folderData.folderUrl,\n    ...fileUrls,\n    archivosCompletos: true\n  }\n}];"
+      },
+      "id": "consolidate-data-01",
+      "name": "Consolidar Datos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1920, 380]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Credit_Evaluations",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Solicitud ID": "={{ $json.solicitudId }}",
+            "Fecha": "={{ $json.fechaSolicitud }}",
+            "Empresa": "={{ $json.empresa }}",
+            "NIT": "={{ $json.nit }}",
+            "Año Fundación": "={{ $json.anioFundacion }}",
+            "Años Operación": "={{ $json.aniosFundacion }}",
+            "Productos/Servicios": "={{ $json.productosServicios }}",
+            "Clientes": "={{ $json.clientes }}",
+            "Proveedores": "={{ $json.proveedores }}",
+            "Distribución": "={{ $json.distribucion }}",
+            "Email": "={{ $json.email }}",
+            "Teléfono": "={{ $json.telefono }}",
+            "Carpeta Drive": "={{ $json.folderUrl }}",
+            "Certificado Existencia": "={{ $json.certificadoUrl }}",
+            "Balance General": "={{ $json.balanceUrl }}",
+            "Estado Resultados": "={{ $json.estadoResultadosUrl }}",
+            "Flujo Caja": "={{ $json.flujoCajaUrl }}",
+            "RUT": "={{ $json.rutUrl }}",
+            "Estado": "={{ $json.estado }}",
+            "Score": "",
+            "Nivel Riesgo": ""
+          }
+        },
+        "options": {}
+      },
+      "id": "save-sheets-01",
+      "name": "Guardar en Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2200, 380],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-cred-id",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Subir Balance General').first().json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "download-balance-01",
+      "name": "Descargar Balance",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [2480, 200],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-cred-id",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Subir Estado Resultados').first().json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "download-estado-01",
+      "name": "Descargar Estado Resultados",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [2480, 380],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-cred-id",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Subir Flujo Caja').first().json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "download-flujo-01",
+      "name": "Descargar Flujo Caja",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [2480, 560],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-cred-id",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "extract-balance-01",
+      "name": "Extraer Balance",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [2760, 200]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "extract-estado-01",
+      "name": "Extraer Estado Resultados",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [2760, 380]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "extract-flujo-01",
+      "name": "Extraer Flujo Caja",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [2760, 560]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "merge-extracts-01",
+      "name": "Combinar Extractos",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [3040, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "const extracts = $input.all();\nconst consolidatedData = $('Consolidar Datos').first().json;\n\nlet balanceText = '';\nlet estadoText = '';\nlet flujoText = '';\n\nextracts.forEach((item, idx) => {\n  const text = item.json.text || item.json.data || '';\n  if (idx === 0) balanceText = text;\n  if (idx === 1) estadoText = text;\n  if (idx === 2) flujoText = text;\n});\n\nreturn [{\n  json: {\n    ...consolidatedData,\n    textoBalance: balanceText,\n    textoEstadoResultados: estadoText,\n    textoFlujoCaja: flujoText,\n    documentosCombinados: `BALANCE GENERAL:\\n${balanceText}\\n\\n---\\n\\nESTADO DE RESULTADOS:\\n${estadoText}\\n\\n---\\n\\nFLUJO DE CAJA:\\n${flujoText}`\n  }\n}];"
+      },
+      "id": "combine-text-01",
+      "name": "Combinar Textos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3320, 380]
+    },
+    {
+      "parameters": {
+        "agent": "toolsAgent",
+        "promptType": "define",
+        "text": "=INFORMACIÓN DE LA EMPRESA:\n- Empresa: {{ $json.empresa }}\n- NIT: {{ $json.nit }}\n- Año de Fundación: {{ $json.anioFundacion }} ({{ $json.aniosFundacion }} años de operación)\n- Productos/Servicios: {{ $json.productosServicios }}\n- Principales Clientes: {{ $json.clientes }}\n- Principales Proveedores: {{ $json.proveedores }}\n- Canales de Distribución: {{ $json.distribucion }}\n\nDOCUMENTOS FINANCIEROS:\n{{ $json.documentosCombinados }}",
+        "options": {
+          "systemMessage": "Eres un analista financiero senior de una firma Big Four (Deloitte / KPMG / PwC / EY) especializado en evaluación crediticia empresarial para Colombia. Tu rol es analizar estados financieros, balances generales y flujos de caja con precisión técnica.\n\nTAREA: Analiza los documentos financieros proporcionados y genera una evaluación crediticia completa.\n\nANÁLISIS REQUERIDO:\n1. LIQUIDEZ: Razón corriente, prueba ácida, capital de trabajo\n2. SOLVENCIA: Razón de deuda, endeudamiento total, cobertura de intereses\n3. RENTABILIDAD: ROE, ROA, margen neto, margen operativo\n4. FLUJO DE CAJA: FCO, FCI, FCF, cobertura de servicio de deuda\n5. APALANCAMIENTO: Deuda/Patrimonio, Deuda/EBITDA\n6. ANÁLISIS DE NEGOCIO: Considera los años de operación, diversificación de clientes/proveedores, y canales de distribución\n\nSCORE CREDITICIO (0-1000):\n- 800-1000: Excelente — Riesgo Muy Bajo\n- 650-799: Bueno — Riesgo Bajo\n- 500-649: Regular — Riesgo Medio\n- 350-499: Deficiente — Riesgo Alto\n- 0-349: Crítico — Riesgo Muy Alto\n\nFORMATO DE RESPUESTA JSON:\n{\n  \"score\": <número 0-1000>,\n  \"nivelRiesgo\": \"<Muy Bajo|Bajo|Medio|Alto|Muy Alto>\",\n  \"categoria\": \"<Excelente|Bueno|Regular|Deficiente|Crítico>\",\n  \"resumenEjecutivo\": \"<párrafo de 3-4 oraciones>\",\n  \"analisisNegocio\": {\n    \"antiguedad\": \"<evaluación de años de operación>\",\n    \"diversificacionClientes\": \"<evaluación>\",\n    \"canalDistribucion\": \"<evaluación>\"\n  },\n  \"indicadores\": {\n    \"liquidez\": {\"razonCorriente\": <valor>, \"pruebaAcida\": <valor>, \"evaluacion\": \"<texto>\"},\n    \"solvencia\": {\"razonDeuda\": <valor>, \"evaluacion\": \"<texto>\"},\n    \"rentabilidad\": {\"roe\": <valor>, \"roa\": <valor>, \"evaluacion\": \"<texto>\"},\n    \"flujoCaja\": {\"cobertura\": <valor>, \"evaluacion\": \"<texto>\"}\n  },\n  \"fortalezas\": [\"<fortaleza 1>\", \"<fortaleza 2>\"],\n  \"riesgos\": [\"<riesgo 1>\", \"<riesgo 2>\"],\n  \"recomendacion\": \"<recomendación de crédito clara>\",\n  \"limiteCredito\": \"<rango sugerido en COP>\"\n}"
+        }
+      },
+      "id": "ai-agent-01",
+      "name": "Agente Financiero IA",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [3600, 380]
+    },
+    {
+      "parameters": {
+        "model": "claude-opus-4-6",
+        "options": {}
+      },
+      "id": "claude-model-01",
+      "name": "Modelo Claude",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.2,
+      "position": [3600, 640],
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-cred-id",
+          "name": "Anthropic"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiOutput = $input.first().json.output || $input.first().json.text || '';\nlet report;\ntry {\n  const jsonMatch = aiOutput.match(/\\{[\\s\\S]*\\}/);\n  report = jsonMatch ? JSON.parse(jsonMatch[0]) : { score: 0, nivelRiesgo: 'Error', categoria: 'Error', resumenEjecutivo: aiOutput };\n} catch(e) {\n  report = { score: 0, nivelRiesgo: 'Error en análisis', resumenEjecutivo: aiOutput };\n}\n\nconst businessData = $('Combinar Textos').first().json;\nreturn [{\n  json: {\n    solicitudId: businessData.solicitudId,\n    empresa: businessData.empresa,\n    nit: businessData.nit,\n    anioFundacion: businessData.anioFundacion,\n    aniosFundacion: businessData.aniosFundacion,\n    email: businessData.email,\n    telefono: businessData.telefono,\n    folderUrl: businessData.folderUrl,\n    fecha: businessData.fechaSolicitud,\n    score: report.score,\n    nivelRiesgo: report.nivelRiesgo,\n    categoria: report.categoria,\n    resumenEjecutivo: report.resumenEjecutivo,\n    analisisNegocio: report.analisisNegocio,\n    indicadores: report.indicadores,\n    fortalezas: report.fortalezas,\n    riesgos: report.riesgos,\n    recomendacion: report.recomendacion,\n    limiteCredito: report.limiteCredito,\n    reporteCompleto: report\n  }\n}];"
+      },
+      "id": "calculate-score-01",
+      "name": "Calcular Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3880, 380]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Credit_Evaluations",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Score": "={{ $json.score }}",
+            "Nivel Riesgo": "={{ $json.nivelRiesgo }}",
+            "Estado": "=Evaluación Completada"
+          }
+        },
+        "options": {}
+      },
+      "id": "update-sheets-01",
+      "name": "Actualizar Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [4160, 380],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-cred-id",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.FROM_EMAIL }}",
+        "toEmail": "={{ $json.email }}",
+        "subject": "=Reporte Crediticio - {{ $json.empresa }} | Score: {{ $json.score }}",
+        "emailType": "html",
+        "html": "=<!DOCTYPE html><html lang=\"es\"><head><meta charset=\"UTF-8\"><title>Reporte Crediticio</title></head><body style=\"font-family:Arial,sans-serif;margin:0;padding:0;background:#f4f4f4;\"><div style=\"max-width:700px;margin:30px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.1);\"><div style=\"background:#1a2e4a;color:#fff;padding:30px;text-align:center;\"><h1 style=\"margin:0;font-size:24px;\">Reporte Crediticio Empresarial</h1><p style=\"margin:5px 0 0;opacity:0.8;\">Ekinoxis Financial Intelligence</p></div><div style=\"background:#f0f7ff;padding:25px;text-align:center;border-bottom:3px solid #1a2e4a;\"><div style=\"font-size:72px;font-weight:bold;color:#1a2e4a;\">{{ $json.score }}</div><div style=\"font-size:16px;color:#555;margin-top:5px;\">Score Crediticio (0-1000)</div><div style=\"display:inline-block;padding:8px 20px;border-radius:20px;font-weight:bold;margin-top:10px;\">{{ $json.nivelRiesgo }} — {{ $json.categoria }}</div></div><div style=\"padding:30px;\"><h2 style=\"color:#1a2e4a;\">Información de la Empresa</h2><table style=\"width:100%;\"><tr><td style=\"padding:8px;background:#f9f9f9;\"><strong>Empresa:</strong></td><td>{{ $json.empresa }}</td></tr><tr><td style=\"padding:8px;\"><strong>NIT:</strong></td><td>{{ $json.nit }}</td></tr><tr><td style=\"padding:8px;background:#f9f9f9;\"><strong>Años de Operación:</strong></td><td>{{ $json.aniosFundacion }} años</td></tr></table><h2 style=\"color:#1a2e4a;margin-top:25px;\">Resumen Ejecutivo</h2><p>{{ $json.resumenEjecutivo }}</p><div style=\"background:#e8f4e8;border-left:4px solid #2e7d32;padding:15px;margin:15px 0;\"><strong>Recomendación:</strong> {{ $json.recomendacion }}</div><div style=\"background:#fff3e0;border-left:4px solid #e65100;padding:15px;\"><strong>Límite de Crédito Sugerido:</strong> {{ $json.limiteCredito }}</div><div style=\"margin-top:20px;padding:15px;background:#e3f2fd;border-radius:5px;\"><strong>📁 Documentos:</strong> <a href=\"{{ $json.folderUrl }}\">Ver carpeta en Google Drive</a></div></div><div style=\"background:#1a2e4a;color:#aaa;padding:20px;text-align:center;font-size:12px;\"><p>Reporte ID: {{ $json.solicitudId }} | Generado: {{ $json.fecha }}</p></div></div></body></html>",
+        "options": {}
+      },
+      "id": "send-email-01",
+      "name": "Enviar Reporte Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [4440, 380],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-cred-id",
+          "name": "Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "title": "Evaluación Crediticia Completada",
+        "message": "=✅ Gracias, {{ $('Calcular Score').item.json.empresa }}!\n\nSu evaluación crediticia ha sido procesada exitosamente.\n\n**Score Crediticio:** {{ $('Calcular Score').item.json.score }} / 1000\n**Nivel de Riesgo:** {{ $('Calcular Score').item.json.nivelRiesgo }}\n**Categoría:** {{ $('Calcular Score').item.json.categoria }}\n\n**Resumen:** {{ $('Calcular Score').item.json.resumenEjecutivo }}\n\n**Recomendación:** {{ $('Calcular Score').item.json.recomendacion }}\n**Límite de Crédito Sugerido:** {{ $('Calcular Score').item.json.limiteCredito }}\n\n📧 Se ha enviado el reporte detallado a: {{ $('Calcular Score').item.json.email }}\n\n📁 Sus documentos han sido almacenados de forma segura.\n\nID de Solicitud: {{ $('Calcular Score').item.json.solicitudId }}",
+        "options": {}
+      },
+      "id": "form-response-01",
+      "name": "Respuesta Final",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 1,
+      "position": [4720, 380]
+    }
+  ],
+  "connections": {
+    "Formulario Empresa": {
+      "main": [[{"node": "Normalizar Datos", "type": "main", "index": 0}]]
+    },
+    "Normalizar Datos": {
+      "main": [[{"node": "Crear Carpeta Empresa", "type": "main", "index": 0}]]
+    },
+    "Crear Carpeta Empresa": {
+      "main": [[{"node": "Guardar ID Carpeta", "type": "main", "index": 0}]]
+    },
+    "Guardar ID Carpeta": {
+      "main": [[
+        {"node": "Subir Certificado Existencia", "type": "main", "index": 0},
+        {"node": "Subir Balance General", "type": "main", "index": 0},
+        {"node": "Subir Estado Resultados", "type": "main", "index": 0},
+        {"node": "Subir Flujo Caja", "type": "main", "index": 0},
+        {"node": "Subir RUT", "type": "main", "index": 0}
+      ]]
+    },
+    "Subir Certificado Existencia": {
+      "main": [[{"node": "Esperar Uploads", "type": "main", "index": 0}]]
+    },
+    "Subir Balance General": {
+      "main": [[{"node": "Esperar Uploads", "type": "main", "index": 0}]]
+    },
+    "Subir Estado Resultados": {
+      "main": [[{"node": "Esperar Uploads", "type": "main", "index": 0}]]
+    },
+    "Subir Flujo Caja": {
+      "main": [[{"node": "Esperar Uploads", "type": "main", "index": 0}]]
+    },
+    "Subir RUT": {
+      "main": [[{"node": "Esperar Uploads", "type": "main", "index": 0}]]
+    },
+    "Esperar Uploads": {
+      "main": [[{"node": "Consolidar Datos", "type": "main", "index": 0}]]
+    },
+    "Consolidar Datos": {
+      "main": [[{"node": "Guardar en Sheets", "type": "main", "index": 0}]]
+    },
+    "Guardar en Sheets": {
+      "main": [[
+        {"node": "Descargar Balance", "type": "main", "index": 0},
+        {"node": "Descargar Estado Resultados", "type": "main", "index": 0},
+        {"node": "Descargar Flujo Caja", "type": "main", "index": 0}
+      ]]
+    },
+    "Descargar Balance": {
+      "main": [[{"node": "Extraer Balance", "type": "main", "index": 0}]]
+    },
+    "Descargar Estado Resultados": {
+      "main": [[{"node": "Extraer Estado Resultados", "type": "main", "index": 0}]]
+    },
+    "Descargar Flujo Caja": {
+      "main": [[{"node": "Extraer Flujo Caja", "type": "main", "index": 0}]]
+    },
+    "Extraer Balance": {
+      "main": [[{"node": "Combinar Extractos", "type": "main", "index": 0}]]
+    },
+    "Extraer Estado Resultados": {
+      "main": [[{"node": "Combinar Extractos", "type": "main", "index": 0}]]
+    },
+    "Extraer Flujo Caja": {
+      "main": [[{"node": "Combinar Extractos", "type": "main", "index": 0}]]
+    },
+    "Combinar Extractos": {
+      "main": [[{"node": "Combinar Textos", "type": "main", "index": 0}]]
+    },
+    "Combinar Textos": {
+      "main": [[{"node": "Agente Financiero IA", "type": "main", "index": 0}]]
+    },
+    "Modelo Claude": {
+      "ai_languageModel": [[{"node": "Agente Financiero IA", "type": "ai_languageModel", "index": 0}]]
+    },
+    "Agente Financiero IA": {
+      "main": [[{"node": "Calcular Score", "type": "main", "index": 0}]]
+    },
+    "Calcular Score": {
+      "main": [[{"node": "Actualizar Sheets", "type": "main", "index": 0}]]
+    },
+    "Actualizar Sheets": {
+      "main": [[{"node": "Enviar Reporte Email", "type": "main", "index": 0}]]
+    },
+    "Enviar Reporte Email": {
+      "main": [[{"node": "Respuesta Final", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "v2-improved-2024",
+  "meta": {"templateCredsSetupCompleted": true},
+  "id": "workflow-01-credit-eval",
+  "tags": [{"name": "financial", "createdAt": "2024-01-01T00:00:00.000Z"}]
+}

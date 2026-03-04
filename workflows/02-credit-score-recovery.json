@@ -1,0 +1,314 @@
+{
+  "name": "02 - Recuperación Crediticia",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Recuperación Crediticia — Solicitud",
+        "formDescription": "Todos los datos son obligatorios para que el Derecho de Petición no sea rechazado por falta de legitimidad.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Nombres Completos",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "Como aparecen en documento de identidad"
+            },
+            {
+              "fieldLabel": "Apellidos Completos",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "Como aparecen en documento de identidad"
+            },
+            {
+              "fieldLabel": "Tipo de Documento",
+              "fieldType": "dropdown",
+              "requiredField": true,
+              "fieldOptions": {
+                "values": [
+                  { "option": "Cédula de Ciudadanía" },
+                  { "option": "Pasaporte" },
+                  { "option": "Cédula de Extranjería" }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Número de Documento",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Lugar de Expedición",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "Ciudad donde fue expedido el documento"
+            },
+            {
+              "fieldLabel": "Dirección de Domicilio",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "Para notificaciones físicas"
+            },
+            {
+              "fieldLabel": "Departamento",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Ciudad",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Correo Electrónico",
+              "fieldType": "email",
+              "requiredField": true,
+              "placeholder": "Para notificación de respuesta"
+            },
+            {
+              "fieldLabel": "Número de Celular",
+              "fieldType": "text",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567801",
+      "name": "Formulario Recuperación",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [240, 300],
+      "webhookId": "b2c3d4e5-f6a7-8901-bcde-f12345678902"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst caseId = 'RC-' + Date.now();\nconst timestamp = new Date().toISOString();\nconst fecha = new Date().toLocaleDateString('es-CO', {timeZone: 'America/Bogota'});\n\nreturn [{\n  json: {\n    caseId,\n    timestamp,\n    fecha,\n    nombres: data['Nombres Completos']?.trim() || '',\n    apellidos: data['Apellidos Completos']?.trim() || '',\n    tipoDocumento: data['Tipo de Documento'] || '',\n    numeroDocumento: data['Número de Documento']?.trim() || '',\n    lugarExpedicion: data['Lugar de Expedición']?.trim() || '',\n    direccion: data['Dirección de Domicilio']?.trim() || '',\n    departamento: data['Departamento']?.trim() || '',\n    ciudad: data['Ciudad']?.trim() || '',\n    email: data['Correo Electrónico']?.trim().toLowerCase() || '',\n    celular: data['Número de Celular']?.trim() || '',\n    nombreCompleto: (data['Nombres Completos'] + ' ' + data['Apellidos Completos']).trim(),\n    estado: 'Nuevo - Paso 1: Diagnóstico Pendiente',\n    etapa: 1,\n    valorPaso1: 70000,\n    valorPaso2: 280000,\n    valorPaso3: 350000\n  }\n}];"
+      },
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789003",
+      "name": "Validar y Formatear",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{ $env.GOOGLE_SHEET_ID }}",
+        "sheetName": "Credit_Recovery_Clients",
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "d4e5f6a7-b8c9-0123-defa-234567890104",
+      "name": "Guardar en Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [800, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-cred-id",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "agentType": "toolsAgent",
+        "promptType": "define",
+        "text": "=Cliente: {{ $('Validar y Formatear').item.json.nombreCompleto }}\nDocumento: {{ $('Validar y Formatear').item.json.tipoDocumento }} {{ $('Validar y Formatear').item.json.numeroDocumento }}\nExpedido en: {{ $('Validar y Formatear').item.json.lugarExpedicion }}\nCiudad: {{ $('Validar y Formatear').item.json.ciudad }}, {{ $('Validar y Formatear').item.json.departamento }}\nNúmero de caso: {{ $('Validar y Formatear').item.json.caseId }}\nFecha: {{ $('Validar y Formatear').item.json.fecha }}\n\nGenera el mensaje de bienvenida y diagnóstico inicial para este cliente.",
+        "options": {
+          "systemMessage": "Eres un asesor legal y financiero especializado en recuperación crediticia en Colombia. Conoces en detalle el sistema de centrales de riesgo (DataCrédito/Experian, TransUnion), la Ley 1266 de 2008 (Habeas Data), la prescripción de deudas, y el proceso de Derecho de Petición.\n\nTAREA: Para el cliente que ha solicitado el servicio de Recuperación Crediticia, genera un resumen diagnóstico inicial y un mensaje de bienvenida profesional.\n\nPROCESO DE 3 ETAPAS:\n- Paso 1 (Diagnóstico - $70,000 COP): Análisis completo del historial crediticio, score actual, reportes negativos y capacidad de endeudamiento\n- Paso 2 (Proceso Formal - $280,000 COP): Registro de créditos pagados, documentos de prescripción, inyección de puntaje\n- Paso 3 (Éxito - $350,000 COP): Registro de créditos $5M-$10M para impacto inmediato en score\n\nRESPONDE en formato JSON:\n{\n  \"mensajeBienvenida\": \"<mensaje profesional cálido en español>\",\n  \"descripcionPaso1\": \"<qué incluye el diagnóstico>\",\n  \"tiempoEstimado\": \"<tiempo estimado para ver resultados>\",\n  \"documentosRecomendados\": [\"<doc 1>\", \"<doc 2>\"],\n  \"informacionImportante\": \"<nota legal importante para el cliente>\"\n}"
+        }
+      },
+      "id": "e5f6a7b8-c9d0-1234-efab-345678901205",
+      "name": "Agente Diagnóstico IA",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [1080, 300]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-6",
+        "options": {}
+      },
+      "id": "f6a7b8c9-d0e1-2345-fabc-456789012306",
+      "name": "Modelo Claude",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.2,
+      "position": [1080, 560],
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-cred-id",
+          "name": "Anthropic"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiOutput = $input.first().json.output || $input.first().json.text || '';\nconst client = $('Validar y Formatear').first().json;\nlet diagnosis;\ntry {\n  const match = aiOutput.match(/\\{[\\s\\S]*\\}/);\n  diagnosis = match ? JSON.parse(match[0]) : { mensajeBienvenida: aiOutput };\n} catch(e) {\n  diagnosis = { mensajeBienvenida: aiOutput };\n}\n\nconst emailHtml = `\n<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background: #1a3a5c; padding: 20px; text-align: center;\">\n    <h1 style=\"color: white; margin: 0;\">Recuperación Crediticia</h1>\n    <p style=\"color: #a0c4ff; margin: 5px 0;\">Ekinoxis Financial Services</p>\n  </div>\n  <div style=\"padding: 30px; background: #f9f9f9;\">\n    <p>Estimado/a <strong>${client.nombres}</strong>,</p>\n    <p>${diagnosis.mensajeBienvenida || 'Su solicitud ha sido recibida exitosamente.'}</p>\n    <div style=\"background: white; border-left: 4px solid #1a3a5c; padding: 15px; margin: 20px 0;\">\n      <h3 style=\"color: #1a3a5c; margin-top: 0;\">Número de Caso: ${client.caseId}</h3>\n      <p><strong>Paso 1 — Diagnóstico Crediticio:</strong> $70,000 COP</p>\n      <p>${diagnosis.descripcionPaso1 || 'Análisis completo de su historial crediticio.'}</p>\n    </div>\n    <p><strong>Tiempo estimado:</strong> ${diagnosis.tiempoEstimado || '3-5 días hábiles'}</p>\n    <p><strong>Nota importante:</strong> ${diagnosis.informacionImportante || ''}</p>\n    <div style=\"background: #e8f4fd; padding: 15px; border-radius: 5px;\">\n      <h4 style=\"color: #1a3a5c;\">Próximos Pasos:</h4>\n      <ol>\n        <li>Espere confirmación de pago del Paso 1</li>\n        <li>Recibirá su diagnóstico completo</li>\n        <li>Se procederá con las etapas siguientes</li>\n      </ol>\n    </div>\n  </div>\n  <div style=\"background: #1a3a5c; padding: 15px; text-align: center;\">\n    <p style=\"color: #a0c4ff; margin: 0; font-size: 12px;\">© Ekinoxis | Para consultas responda este correo</p>\n  </div>\n</div>`;\n\nreturn [{json: { ...client, diagnosis, emailHtml }}];"
+      },
+      "id": "a7b8c9d0-e1f2-3456-abcd-567890123407",
+      "name": "Formatear Diagnóstico",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1360, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.FROM_EMAIL }}",
+        "sendTo": "={{ $('Validar y Formatear').item.json.email }}",
+        "subject": "=Confirmación Solicitud Recuperación Crediticia #{{ $('Validar y Formatear').item.json.caseId }}",
+        "emailType": "html",
+        "html": "={{ $json.emailHtml }}",
+        "options": {}
+      },
+      "id": "b8c9d0e1-f2a3-4567-bcde-678901234508",
+      "name": "Email Cliente Confirmación",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1640, 300],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-cred-id",
+          "name": "Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.FROM_EMAIL }}",
+        "sendTo": "={{ $env.INTERNAL_EMAIL }}",
+        "subject": "=Nueva Solicitud RC: {{ $('Validar y Formatear').item.json.nombreCompleto }}",
+        "emailType": "html",
+        "html": "=<div style=\"font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;\">\n  <div style=\"background: #1a3a5c; padding: 20px; text-align: center;\">\n    <h1 style=\"color: white; margin: 0;\">Nueva Solicitud — Recuperación Crediticia</h1>\n    <p style=\"color: #a0c4ff; margin: 5px 0;\">Ekinoxis Financial Services | Notificación Interna</p>\n  </div>\n  <div style=\"padding: 30px; background: #f9f9f9;\">\n    <h2 style=\"color: #1a3a5c;\">Datos del Cliente</h2>\n    <table style=\"width: 100%; border-collapse: collapse;\">\n      <tr style=\"border-bottom: 1px solid #ddd;\">\n        <td style=\"padding: 8px; font-weight: bold; width: 40%;\">Número de Caso:</td>\n        <td style=\"padding: 8px;\">{{ $('Validar y Formatear').item.json.caseId }}</td>\n      </tr>\n      <tr style=\"border-bottom: 1px solid #ddd; background: #f0f0f0;\">\n        <td style=\"padding: 8px; font-weight: bold;\">Nombre Completo:</td>\n        <td style=\"padding: 8px;\">{{ $('Validar y Formatear').item.json.nombreCompleto }}</td>\n      </tr>\n      <tr style=\"border-bottom: 1px solid #ddd;\">\n        <td style=\"padding: 8px; font-weight: bold;\">Tipo de Documento:</td>\n        <td style=\"padding: 8px;\">{{ $('Validar y Formatear').item.json.tipoDocumento }}</td>\n      </tr>\n      <tr style=\"border-bottom: 1px solid #ddd; background: #f0f0f0;\">\n        <td style=\"padding: 8px; font-weight: bold;\">Número de Documento:</td>\n        <td style=\"padding: 8px;\">{{ $('Validar y Formatear').item.json.numeroDocumento }}</td>\n      </tr>\n      <tr style=\"border-bottom: 1px solid #ddd;\">\n        <td style=\"padding: 8px; font-weight: bold;\">Lugar de Expedición:</td>\n        <td style=\"padding: 8px;\">{{ $('Validar y Formatear').item.json.lugarExpedicion }}</td>\n      </tr>\n      <tr style=\"border-bottom: 1px solid #ddd; background: #f0f0f0;\">\n        <td style=\"padding: 8px; font-weight: bold;\">Dirección:</td>\n        <td style=\"padding: 8px;\">{{ $('Validar y Formatear').item.json.direccion }}</td>\n      </tr>\n      <tr style=\"border-bottom: 1px solid #ddd;\">\n        <td style=\"padding: 8px; font-weight: bold;\">Ciudad / Departamento:</td>\n        <td style=\"padding: 8px;\">{{ $('Validar y Formatear').item.json.ciudad }}, {{ $('Validar y Formatear').item.json.departamento }}</td>\n      </tr>\n      <tr style=\"border-bottom: 1px solid #ddd; background: #f0f0f0;\">\n        <td style=\"padding: 8px; font-weight: bold;\">Correo Electrónico:</td>\n        <td style=\"padding: 8px;\">{{ $('Validar y Formatear').item.json.email }}</td>\n      </tr>\n      <tr style=\"border-bottom: 1px solid #ddd;\">\n        <td style=\"padding: 8px; font-weight: bold;\">Celular:</td>\n        <td style=\"padding: 8px;\">{{ $('Validar y Formatear').item.json.celular }}</td>\n      </tr>\n      <tr style=\"border-bottom: 1px solid #ddd; background: #f0f0f0;\">\n        <td style=\"padding: 8px; font-weight: bold;\">Estado:</td>\n        <td style=\"padding: 8px;\">{{ $('Validar y Formatear').item.json.estado }}</td>\n      </tr>\n      <tr style=\"border-bottom: 1px solid #ddd;\">\n        <td style=\"padding: 8px; font-weight: bold;\">Fecha de Solicitud:</td>\n        <td style=\"padding: 8px;\">{{ $('Validar y Formatear').item.json.fecha }}</td>\n      </tr>\n    </table>\n    <div style=\"background: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin-top: 20px; border-radius: 5px;\">\n      <h4 style=\"color: #856404; margin-top: 0;\">Valores del Proceso:</h4>\n      <ul style=\"margin: 0;\">\n        <li>Paso 1 — Diagnóstico: $70,000 COP</li>\n        <li>Paso 2 — Proceso Formal: $280,000 COP</li>\n        <li>Paso 3 — Éxito: $350,000 COP</li>\n      </ul>\n    </div>\n  </div>\n  <div style=\"background: #1a3a5c; padding: 15px; text-align: center;\">\n    <p style=\"color: #a0c4ff; margin: 0; font-size: 12px;\">Notificación automática — Ekinoxis Financial Services</p>\n  </div>\n</div>",
+        "options": {}
+      },
+      "id": "c9d0e1f2-a3b4-5678-cdef-789012345609",
+      "name": "Notificación Interna",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1640, 560],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-cred-id",
+          "name": "Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "title": "Solicitud Registrada Exitosamente",
+        "message": "=Gracias, {{ $('Validar y Formatear').item.json.nombres }}!\n\n✅ Su solicitud de Recuperación Crediticia ha sido registrada.\n\n**Número de Caso:** {{ $('Validar y Formatear').item.json.caseId }}\n\n**Próximos pasos:**\n1. Recibirá un correo de confirmación con el diagnóstico inicial\n2. Nuestro equipo revisará su caso\n3. Le contactaremos para continuar con el Paso 1 (Diagnóstico - $70,000 COP)\n\n**Email de contacto:** {{ $('Validar y Formatear').item.json.email }}",
+        "options": {}
+      },
+      "id": "d0e1f2a3-b4c5-6789-defa-890123456710",
+      "name": "Respuesta Formulario",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 1,
+      "position": [1920, 300]
+    }
+  ],
+  "connections": {
+    "Formulario Recuperación": {
+      "main": [
+        [
+          {
+            "node": "Validar y Formatear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar y Formatear": {
+      "main": [
+        [
+          {
+            "node": "Guardar en Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en Sheets": {
+      "main": [
+        [
+          {
+            "node": "Agente Diagnóstico IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo Claude": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente Diagnóstico IA",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Diagnóstico IA": {
+      "main": [
+        [
+          {
+            "node": "Formatear Diagnóstico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Diagnóstico": {
+      "main": [
+        [
+          {
+            "node": "Email Cliente Confirmación",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notificación Interna",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Cliente Confirmación": {
+      "main": [
+        [
+          {
+            "node": "Respuesta Formulario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e1f2a3b4-c5d6-7890-efab-901234567811",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "f2a3b4c5-d6e7-8901-fabc-012345678912",
+  "tags": [
+    {
+      "name": "legal",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
