@@ -1,0 +1,398 @@
+{
+  "name": "WF - Shopper WhatsApp Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000001",
+      "name": "Webhook GET",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 160],
+      "webhookId": "whatsapp-verify"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query[\"hub.challenge\"] }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000002",
+      "name": "Respond Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 160]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000003",
+      "name": "Webhook POST",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 440],
+      "webhookId": "whatsapp-messages"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst body = raw.body !== undefined ? raw.body : raw;\n\nif (!body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {\n  return [{ json: { skip: true } }];\n}\n\nconst change = body.entry[0].changes[0].value;\nconst message = change.messages[0];\nconst contact = change.contacts?.[0];\n\nif (message.type !== 'text') {\n  return [{ json: { skip: true, reason: 'non-text', from: message.from } }];\n}\n\nreturn [{\n  json: {\n    skip: false,\n    wa_phone: message.from,\n    wa_message_id: message.id,\n    customer_name: contact?.profile?.name || 'Cliente',\n    message_text: message.text.body,\n    timestamp: message.timestamp\n  }\n}];"
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000004",
+      "name": "Extract Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 440]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "skip-check",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000005",
+      "name": "Should Skip?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 440]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\":\"ok\"}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000006",
+      "name": "Respond 200 Skip",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 320]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/customers?on_conflict=wa_phone",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"wa_phone\": \"{{ $json.wa_phone }}\", \"full_name\": \"{{ $json.customer_name }}\"}",
+        "options": {}
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000007",
+      "name": "Upsert Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 560]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/conversations?on_conflict=wa_phone",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"customer_id\": \"{{ $json[0].id }}\", \"wa_phone\": \"{{ $node['Extract Message'].json.wa_phone }}\", \"status\": \"ai_active\", \"last_message_at\": \"{{ new Date().toISOString() }}\"}",
+        "options": {}
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000008",
+      "name": "Upsert Conversation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 560]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"conversation_id\": \"{{ $json[0].id }}\", \"wa_message_id\": \"{{ $node['Extract Message'].json.wa_message_id }}\", \"direction\": \"inbound\", \"sender_type\": \"customer\", \"message_type\": \"text\", \"content\": \"{{ $node['Extract Message'].json.message_text }}\"}",
+        "options": {}
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000009",
+      "name": "Save Inbound Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 560]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\":\"ok\"}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000010",
+      "name": "Respond 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 560]
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $node['Extract Message'].json;\nconst conv = $node['Upsert Conversation'].json[0];\nconst customer = $node['Upsert Customer'].json[0];\n\nreturn [{\n  json: {\n    chatInput: msg.message_text,\n    sessionId: msg.wa_phone,\n    wa_phone: msg.wa_phone,\n    customer_name: msg.customer_name,\n    conversation_id: conv.id,\n    customer_id: customer.id\n  }\n}];"
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000011",
+      "name": "Prepare Agent Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 560]
+    },
+    {
+      "parameters": {
+        "agent": "toolsAgent",
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "systemMessage": "=Eres el asistente de ventas de Shopper Center, una tienda en Colombia. Atiendes clientes por WhatsApp.\n\n## Personalidad\n- Español colombiano natural (no neutro)\n- Amigable, cercano pero profesional\n- Respuestas cortas: máximo 3-4 líneas (esto es WhatsApp)\n- Emojis con moderación (1-2 por mensaje)\n- Siempre termina con pregunta o llamada a la acción\n\n## Flujo de venta\n1. Saluda y pregunta qué busca\n2. Usa buscar_productos para mostrar opciones (máximo 3)\n3. Confirma variante (talla/color si aplica)\n4. Pide datos: nombre completo, teléfono, dirección, ciudad, departamento\n5. Pregunta: ¿Pagar ahora con Mercado Pago o contra entrega?\n6. Llama crear_pedido con todos los datos\n\n## Flujo CONTRA ENTREGA (is_cod=true)\n- Llama crear_pedido con is_cod=true\n- Confirma al cliente que el equipo lo contactará\n- NO generes link de pago\n\n## Flujo PAGO ANTICIPADO (is_cod=false)\n- Llama crear_pedido con is_cod=false\n- Inmediatamente llama generar_link_pago con el order_id retornado\n- Envía el link al cliente\n\n## Reglas\n- NUNCA inventes productos ni precios\n- Si detectas: queja, reclamo, devolución, humano, gerente → escalar_a_humano\n- Si envían audio/imagen: pide que escriban su consulta\n- NUNCA llames generar_link_pago para pedidos contra entrega\n\n## IMPORTANTE — Formato de herramientas\n- crear_pedido: el input DEBE ser JSON e incluir conversation_id y customer_id del contexto\n- escalar_a_humano: el input DEBE ser JSON con reason y conversation_id del contexto\n- generar_link_pago: el input DEBE ser JSON con order_id (del resultado de crear_pedido), amount y description\n- buscar_productos: el input es un string simple con el término de búsqueda\n- consultar_pedido: el input es el número de teléfono del cliente\n\n## Cliente actual\nNombre: {{ $json.customer_name }}\nTeléfono: {{ $json.wa_phone }}\nConversación ID: {{ $json.conversation_id }}\nCliente ID: {{ $json.customer_id }}",
+        "options": {
+          "maxIterations": 5
+        }
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000012",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [2000, 560]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-6",
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 1024
+        }
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000013",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [1780, 780],
+      "credentials": {
+        "anthropicApi": { "id": "", "name": "Anthropic" }
+      }
+    },
+    {
+      "parameters": {
+        "sessionKey": "={{ $json.sessionId }}",
+        "contextWindowLength": 20
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000014",
+      "name": "Postgres Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [2000, 780],
+      "credentials": {
+        "postgres": { "id": "", "name": "Railway Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "name": "buscar_productos",
+        "description": "Busca productos en el catálogo por nombre o palabra clave. Input: string con el término de búsqueda (ej: 'audífonos', 'camiseta roja'). Retorna lista de productos con nombre, precio, stock e ID.",
+        "language": "javaScript",
+        "jsCode": "// query = término de búsqueda del producto\nconst term = encodeURIComponent(query.trim());\nconst results = await $helpers.httpRequest({\n  method: 'GET',\n  url: `${$env.SUPABASE_URL}/rest/v1/products?or=(name.ilike.*${term}*,description.ilike.*${term}*)&is_active=eq.true&select=id,dropi_product_id,name,description,price,stock&limit=5`,\n  headers: {\n    apikey: $env.SUPABASE_SERVICE_KEY,\n    Authorization: `Bearer ${$env.SUPABASE_SERVICE_KEY}`\n  }\n});\n\nif (!results || results.length === 0) {\n  return 'No encontré productos con ese criterio. Sugiere al cliente otro término de búsqueda.';\n}\n\nconst lines = results.map(p =>\n  `• ${p.name} | $${Number(p.price).toLocaleString('es-CO')} COP | Stock: ${p.stock} | ID: ${p.dropi_product_id}`\n);\nreturn `Productos encontrados:\\n${lines.join('\\n')}`;"
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000015",
+      "name": "Tool: buscar_productos",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [1560, 780]
+    },
+    {
+      "parameters": {
+        "name": "crear_pedido",
+        "description": "Crea un pedido. Input: JSON string con campos: customer_name (string), customer_phone (string), address (string), city (string), department (string), items (array de {dropi_product_id, name, quantity, unit_price}), is_cod (boolean: true=contra entrega, false=pago anticipado), conversation_id (string del contexto), customer_id (string del contexto). Retorna JSON con order_id y total_amount.",
+        "language": "javaScript",
+        "jsCode": "let data;\ntry { data = JSON.parse(query); } catch(e) { return `Error: el input debe ser JSON válido. Recibido: ${query}`; }\n\nconst { customer_name, customer_phone, address, city, department, items, is_cod, conversation_id, customer_id } = data;\n\nif (!items || !Array.isArray(items) || items.length === 0) {\n  return 'Error: se requiere al menos un item en el pedido.';\n}\n\nconst total_amount = items.reduce((sum, item) => sum + (Number(item.unit_price) * Number(item.quantity)), 0);\n\nconst orderRes = await $helpers.httpRequest({\n  method: 'POST',\n  url: `${$env.SUPABASE_URL}/rest/v1/orders`,\n  headers: {\n    apikey: $env.SUPABASE_SERVICE_KEY,\n    Authorization: `Bearer ${$env.SUPABASE_SERVICE_KEY}`,\n    'Content-Type': 'application/json',\n    Prefer: 'return=representation'\n  },\n  body: JSON.stringify({\n    customer_id,\n    conversation_id,\n    customer_name,\n    customer_phone,\n    shipping_address: address,\n    city,\n    department,\n    items,\n    is_cod: !!is_cod,\n    total_amount,\n    status: 'pending'\n  })\n});\n\nconst order = Array.isArray(orderRes) ? orderRes[0] : orderRes;\n\nif (is_cod) {\n  await $helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.resend.com/emails',\n    headers: {\n      Authorization: `Bearer ${$env.RESEND_API_KEY}`,\n      'Content-Type': 'application/json'\n    },\n    body: JSON.stringify({\n      from: $env.FROM_EMAIL,\n      to: $env.INTERNAL_EMAIL,\n      subject: `🛍️ Nuevo pedido CONTRA ENTREGA — ${customer_name}`,\n      html: `<h2>Nuevo pedido contra entrega</h2><p><strong>Cliente:</strong> ${customer_name} | ${customer_phone}</p><p><strong>Dirección:</strong> ${address}, ${city}, ${department}</p><p><strong>Total:</strong> $${total_amount.toLocaleString('es-CO')} COP</p><p><strong>Pedido ID:</strong> ${order.id}</p>`\n    })\n  }).catch(() => null); // no bloquear si falla el email\n}\n\nreturn JSON.stringify({ order_id: order.id, total_amount: order.total_amount, is_cod: order.is_cod, status: order.status });"
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000016",
+      "name": "Tool: crear_pedido",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [2000, 1000]
+    },
+    {
+      "parameters": {
+        "name": "generar_link_pago",
+        "description": "Genera un link de pago con Mercado Pago. Solo usar cuando is_cod=false y ya tienes order_id de crear_pedido. Input: JSON string con campos: order_id (string), amount (número en COP), description (string breve del pedido). Retorna el payment_link para enviar al cliente.",
+        "language": "javaScript",
+        "jsCode": "let data;\ntry { data = JSON.parse(query); } catch(e) { return `Error: el input debe ser JSON válido. Recibido: ${query}`; }\n\nconst { order_id, amount, description } = data;\n\nconst mpRes = await $helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.mercadopago.com/checkout/preferences',\n  headers: {\n    Authorization: `Bearer ${$env.MP_ACCESS_TOKEN}`,\n    'Content-Type': 'application/json'\n  },\n  body: JSON.stringify({\n    items: [{\n      title: description || 'Pedido Shopper Center',\n      quantity: 1,\n      unit_price: Number(amount),\n      currency_id: 'COP'\n    }],\n    external_reference: order_id,\n    notification_url: `${$env.WEBHOOK_URL}/webhook/mercadopago`,\n    statement_descriptor: 'Shopper Center'\n  })\n});\n\nconst paymentLink = mpRes.init_point;\n\nawait $helpers.httpRequest({\n  method: 'PATCH',\n  url: `${$env.SUPABASE_URL}/rest/v1/orders?id=eq.${order_id}`,\n  headers: {\n    apikey: $env.SUPABASE_SERVICE_KEY,\n    Authorization: `Bearer ${$env.SUPABASE_SERVICE_KEY}`,\n    'Content-Type': 'application/json',\n    Prefer: 'return=minimal'\n  },\n  body: JSON.stringify({ mp_preference_id: mpRes.id, payment_link: paymentLink, status: 'awaiting_payment' })\n});\n\nreturn JSON.stringify({ payment_link: paymentLink, mp_preference_id: mpRes.id });"
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000017",
+      "name": "Tool: generar_link_pago",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [2220, 1000]
+    },
+    {
+      "parameters": {
+        "name": "consultar_pedido",
+        "description": "Consulta el estado de pedidos del cliente. Input: string con el número de teléfono (solo dígitos, ej: '573001234567'). Retorna lista de pedidos recientes con estado, total y ciudad.",
+        "language": "javaScript",
+        "jsCode": "// query = número de teléfono\nconst phone = query.trim().replace(/\\D/g, '');\n\nconst results = await $helpers.httpRequest({\n  method: 'GET',\n  url: `${$env.SUPABASE_URL}/rest/v1/orders?customer_phone=eq.${encodeURIComponent(phone)}&select=id,status,total_amount,is_cod,city,created_at&order=created_at.desc&limit=3`,\n  headers: {\n    apikey: $env.SUPABASE_SERVICE_KEY,\n    Authorization: `Bearer ${$env.SUPABASE_SERVICE_KEY}`\n  }\n});\n\nif (!results || results.length === 0) {\n  return 'No encontré pedidos para este número de teléfono.';\n}\n\nconst statusMap = {\n  pending: 'Pendiente',\n  awaiting_payment: 'Esperando pago',\n  paid: 'Pagado',\n  shipped: 'Enviado',\n  delivered: 'Entregado',\n  cancelled: 'Cancelado',\n  human_escalated: 'En revisión'\n};\n\nconst lines = results.map(o =>\n  `• ID: ${o.id.slice(0,8)}... | ${statusMap[o.status] || o.status} | $${Number(o.total_amount).toLocaleString('es-CO')} COP | ${o.city} | ${o.created_at.slice(0,10)}`\n);\nreturn `Tus pedidos recientes:\\n${lines.join('\\n')}`;"
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000018",
+      "name": "Tool: consultar_pedido",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [2440, 1000]
+    },
+    {
+      "parameters": {
+        "name": "escalar_a_humano",
+        "description": "Escala la conversación a un agente humano y notifica al equipo. Usar cuando el cliente menciona: queja, reclamo, devolución, cambio, problema, hablar con alguien, humano, gerente, o cuando no puedes resolver la consulta. Input: JSON string con campos: reason (string explicando por qué se escala), conversation_id (string del contexto).",
+        "language": "javaScript",
+        "jsCode": "let data;\ntry { data = JSON.parse(query); } catch(e) { data = { reason: query, conversation_id: null }; }\n\nconst { reason, conversation_id } = data;\n\nif (conversation_id) {\n  await $helpers.httpRequest({\n    method: 'PATCH',\n    url: `${$env.SUPABASE_URL}/rest/v1/conversations?id=eq.${conversation_id}`,\n    headers: {\n      apikey: $env.SUPABASE_SERVICE_KEY,\n      Authorization: `Bearer ${$env.SUPABASE_SERVICE_KEY}`,\n      'Content-Type': 'application/json',\n      Prefer: 'return=minimal'\n    },\n    body: JSON.stringify({ status: 'human_escalated' })\n  });\n\n  await $helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.resend.com/emails',\n    headers: {\n      Authorization: `Bearer ${$env.RESEND_API_KEY}`,\n      'Content-Type': 'application/json'\n    },\n    body: JSON.stringify({\n      from: $env.FROM_EMAIL,\n      to: $env.INTERNAL_EMAIL,\n      subject: '🙋 Cliente solicita atención humana — Shopper Center',\n      html: `<h2>Escalación a agente humano</h2><p><strong>Conversación ID:</strong> ${conversation_id}</p><p><strong>Razón:</strong> ${reason}</p><p>Por favor contactar al cliente a la brevedad.</p>`\n    })\n  }).catch(() => null);\n}\n\nreturn 'Conversación escalada exitosamente. Un asesor del equipo te contactará pronto.';"
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000019",
+      "name": "Tool: escalar_a_humano",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1,
+      "position": [2660, 1000]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $env.WA_API_VERSION }}/{{ $env.WA_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.WA_ACCESS_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $node['Prepare Agent Input'].json.wa_phone }}\", \"type\": \"text\", \"text\": { \"body\": {{ JSON.stringify($json.output) }} }}",
+        "options": {}
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000020",
+      "name": "Send WA Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2220, 560]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"conversation_id\": \"{{ $node['Prepare Agent Input'].json.conversation_id }}\", \"direction\": \"outbound\", \"sender_type\": \"agent\", \"message_type\": \"text\", \"content\": {{ JSON.stringify($node['AI Agent'].json.output) }}}",
+        "options": {}
+      },
+      "id": "shopper-wf-0001-0001-0001-000000000021",
+      "name": "Save Outbound Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2440, 560]
+    }
+  ],
+  "connections": {
+    "Webhook GET": {
+      "main": [[{ "node": "Respond Challenge", "type": "main", "index": 0 }]]
+    },
+    "Webhook POST": {
+      "main": [[{ "node": "Extract Message", "type": "main", "index": 0 }]]
+    },
+    "Extract Message": {
+      "main": [[{ "node": "Should Skip?", "type": "main", "index": 0 }]]
+    },
+    "Should Skip?": {
+      "main": [
+        [{ "node": "Respond 200 Skip", "type": "main", "index": 0 }],
+        [{ "node": "Upsert Customer", "type": "main", "index": 0 }]
+      ]
+    },
+    "Upsert Customer": {
+      "main": [[{ "node": "Upsert Conversation", "type": "main", "index": 0 }]]
+    },
+    "Upsert Conversation": {
+      "main": [[{ "node": "Save Inbound Message", "type": "main", "index": 0 }]]
+    },
+    "Save Inbound Message": {
+      "main": [[{ "node": "Respond 200 OK", "type": "main", "index": 0 }]]
+    },
+    "Respond 200 OK": {
+      "main": [[{ "node": "Prepare Agent Input", "type": "main", "index": 0 }]]
+    },
+    "Prepare Agent Input": {
+      "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [[{ "node": "AI Agent", "type": "ai_memory", "index": 0 }]]
+    },
+    "Tool: buscar_productos": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+    },
+    "Tool: crear_pedido": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 1 }]]
+    },
+    "Tool: generar_link_pago": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 2 }]]
+    },
+    "Tool: consultar_pedido": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 3 }]]
+    },
+    "Tool: escalar_a_humano": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 4 }]]
+    },
+    "AI Agent": {
+      "main": [[{ "node": "Send WA Reply", "type": "main", "index": 0 }]]
+    },
+    "Send WA Reply": {
+      "main": [[{ "node": "Save Outbound Message", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "shopper" }]
+}
