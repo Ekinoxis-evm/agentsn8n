@@ -1,0 +1,565 @@
+{
+  "name": "WF2 - AI Agent",
+  "nodes": [
+    {
+      "parameters": { "inputSource": "workflowInputData" },
+      "id": "b2c3d4e5-0002-0002-0002-000000000001",
+      "name": "Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages?conversation_id=eq.{{ $json.conversation_id }}&order=created_at.desc&limit=20",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000002",
+      "name": "Load History",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/products?is_active=eq.true&select=dropi_product_id,name,short_description,sale_price,variants,ai_selling_points,ai_objection_handling,ai_keywords,category",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000003",
+      "name": "Load Products",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/agent_config?select=config_key,config_value",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000004",
+      "name": "Load Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $node['Input'].json;\nconst history = $node['Load History'].json || [];\nconst products = $node['Load Products'].json || [];\nconst configArr = $node['Load Config'].json || [];\n\n// Parse config\nconst config = {};\nconfigArr.forEach(c => { config[c.config_key] = c.config_value; });\n\n// Build products catalog string\nconst catalogStr = products.map(p => {\n  const price = new Intl.NumberFormat('es-CO').format(p.sale_price);\n  const variants = p.variants && p.variants.length ? `\\n  Variantes: ${JSON.stringify(p.variants)}` : '';\n  const selling = p.ai_selling_points ? `\\n  Puntos de venta: ${p.ai_selling_points}` : '';\n  const objections = p.ai_objection_handling ? `\\n  Manejo de objeciones: ${p.ai_objection_handling}` : '';\n  return `- ID: ${p.dropi_product_id} | ${p.name} | $${price} COP | ${p.short_description || ''}${variants}${selling}${objections}`;\n}).join('\\n');\n\n// Build conversation history for Claude\nconst messagesHistory = [...history].reverse().map(m => ({\n  role: m.direction === 'inbound' ? 'user' : 'assistant',\n  content: m.content\n}));\n\n// Add current message\nmessagesHistory.push({\n  role: 'user',\n  content: input.message_text\n});\n\nconst storeName = config.store_name || 'Shopper Center';\nconst shippingInfo = config.shipping_info || {};\nconst paymentMethods = config.payment_methods || 'Mercado Pago o contra entrega';\nconst returnPolicy = config.return_policy || '5 días';\nconst escalationTriggers = config.escalation_triggers || [];\n\nconst systemPrompt = `Eres el asistente de ventas de ${storeName}, una tienda en Colombia. Atiendes clientes por WhatsApp. Tu objetivo es ayudarlos a encontrar productos, resolver dudas y completar pedidos.\n\n## Tu personalidad\n- Español colombiano natural (no neutro)\n- Amigable, cercano pero profesional\n- Respuestas cortas: máximo 3-4 líneas (esto es WhatsApp)\n- Emojis con moderación (1-2 por mensaje máximo)\n- Siempre termina con pregunta o llamada a la acción\n\n## Catálogo actual\n${catalogStr || 'No hay productos disponibles en este momento.'}\n\n## Políticas\n- Envío gratis desde $${new Intl.NumberFormat('es-CO').format(shippingInfo.free_min || 100000)} COP\n- Entregas Bogotá: ${shippingInfo.delivery_bogota || '2-4 días'} | Cali: ${shippingInfo.delivery_cali || '1-3 días'} | Resto del país: ${shippingInfo.delivery_other || '3-5 días'}\n- Pago: ${paymentMethods}\n- Devoluciones: ${returnPolicy}\n\n## Flujo de venta\n1. Saluda y pregunta qué busca\n2. Muestra máximo 3 opciones con precio\n3. Si elige: confirma variante (talla/color si aplica)\n4. Pide datos: nombre completo, teléfono, dirección, ciudad, departamento\n5. Pregunta: \"¿Pagar ahora con Mercado Pago o contra entrega?\"\n6. Usa la herramienta crear_pedido con todos los datos\n7. Según la respuesta, sigue el flujo correspondiente:\n\n## Flujo CONTRA ENTREGA (is_cod = true)\n- Llama crear_pedido con is_cod=true\n- El equipo recibe la orden y la crea en Dropi con \"Con Recaudo\"\n- La transportadora cobra al entregar\n- Confirma al cliente: \"Tu pedido está confirmado. La transportadora te contactará para coordinar la entrega y cobrar $X COP al recibir.\"\n- NO generes link de pago\n\n## Flujo PAGO ANTICIPADO (is_cod = false)\n- Llama crear_pedido con is_cod=false para registrar la orden\n- Inmediatamente llama generar_link_pago con el order_id y monto retornados\n- Envía el link al cliente: \"Aquí está tu link de pago seguro: [URL]. Una vez confirmado el pago, el equipo crea tu pedido y lo despacha.\"\n- El equipo solo crea en Dropi cuando Mercado Pago confirme el pago\n\n## Reglas\n- NUNCA inventes productos ni precios que no estén en el catálogo\n- Si detectas estas palabras escala inmediatamente: ${escalationTriggers.join(', ')}\n- Si envían audio/imagen: pide que escriban su consulta\n- NUNCA llames generar_link_pago para pedidos contra entrega\n\n## Cliente actual\nNombre: ${input.customer_name || 'Nuevo cliente'}\nTeléfono: ${input.wa_phone}`;\n\nreturn [{\n  json: {\n    system_prompt: systemPrompt,\n    messages: messagesHistory,\n    wa_phone: input.wa_phone,\n    customer_name: input.customer_name,\n    conversation_id: input.conversation_id,\n    customer_id: input.customer_id\n  }\n}];"
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000005",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-6\",\n  \"max_tokens\": 1024,\n  \"temperature\": 0.3,\n  \"system\": {{ JSON.stringify($json.system_prompt) }},\n  \"messages\": {{ JSON.stringify($json.messages) }},\n  \"tools\": [\n    {\n      \"name\": \"buscar_productos\",\n      \"description\": \"Busca productos en el catálogo por nombre, categoría o palabra clave\",\n      \"input_schema\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"query\": { \"type\": \"string\", \"description\": \"Término de búsqueda\" },\n          \"category\": { \"type\": \"string\", \"description\": \"Categoría del producto\" }\n        },\n        \"required\": [\"query\"]\n      }\n    },\n    {\n      \"name\": \"crear_pedido\",\n      \"description\": \"Crea un pedido con los datos del cliente y productos seleccionados\",\n      \"input_schema\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"customer_name\": { \"type\": \"string\" },\n          \"customer_phone\": { \"type\": \"string\" },\n          \"address\": { \"type\": \"string\" },\n          \"city\": { \"type\": \"string\" },\n          \"department\": { \"type\": \"string\" },\n          \"items\": {\n            \"type\": \"array\",\n            \"items\": {\n              \"type\": \"object\",\n              \"properties\": {\n                \"dropi_product_id\": { \"type\": \"number\" },\n                \"name\": { \"type\": \"string\" },\n                \"quantity\": { \"type\": \"number\" },\n                \"unit_price\": { \"type\": \"number\" }\n              }\n            }\n          },\n          \"is_cod\": { \"type\": \"boolean\", \"description\": \"true = contra entrega, false = pago anticipado\" }\n        },\n        \"required\": [\"customer_name\", \"customer_phone\", \"address\", \"city\", \"department\", \"items\", \"is_cod\"]\n      }\n    },\n    {\n      \"name\": \"generar_link_pago\",\n      \"description\": \"Genera un link de pago de Mercado Pago para un pedido\",\n      \"input_schema\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"order_id\": { \"type\": \"string\" },\n          \"amount\": { \"type\": \"number\" },\n          \"description\": { \"type\": \"string\" }\n        },\n        \"required\": [\"order_id\", \"amount\", \"description\"]\n      }\n    },\n    {\n      \"name\": \"consultar_pedido\",\n      \"description\": \"Consulta el estado de un pedido existente\",\n      \"input_schema\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"phone\": { \"type\": \"string\" }\n        },\n        \"required\": [\"phone\"]\n      }\n    },\n    {\n      \"name\": \"escalar_a_humano\",\n      \"description\": \"Escala la conversación a un agente humano\",\n      \"input_schema\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"reason\": { \"type\": \"string\" }\n        },\n        \"required\": [\"reason\"]\n      }\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000006",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst content = response.content || [];\n\nconst toolUse = content.find(c => c.type === 'tool_use');\nconst textBlock = content.find(c => c.type === 'text');\n\nif (toolUse) {\n  return [{\n    json: {\n      has_tool: true,\n      tool_name: toolUse.name,\n      tool_input: toolUse.input,\n      tool_use_id: toolUse.id,\n      text_before_tool: textBlock?.text || null,\n      wa_phone: $node['Build Prompt'].json.wa_phone,\n      customer_name: $node['Build Prompt'].json.customer_name,\n      conversation_id: $node['Build Prompt'].json.conversation_id,\n      customer_id: $node['Build Prompt'].json.customer_id,\n      messages: $node['Build Prompt'].json.messages,\n      system_prompt: $node['Build Prompt'].json.system_prompt\n    }\n  }];\n}\n\nconst replyText = textBlock?.text || 'Disculpa, hubo un error. ¿Puedes repetir tu mensaje?';\n\nreturn [{\n  json: {\n    has_tool: false,\n    reply: replyText,\n    wa_phone: $node['Build Prompt'].json.wa_phone,\n    conversation_id: $node['Build Prompt'].json.conversation_id\n  }\n}];"
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000007",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1160, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "check-tool",
+              "leftValue": "={{ $json.has_tool }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000008",
+      "name": "Has Tool?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1380, 400]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool_name }}",
+                    "rightValue": "crear_pedido",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "outputKey": "crear_pedido"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool_name }}",
+                    "rightValue": "generar_link_pago",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "outputKey": "generar_link_pago"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool_name }}",
+                    "rightValue": "buscar_productos",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "outputKey": "buscar_productos"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool_name }}",
+                    "rightValue": "escalar_a_humano",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "outputKey": "escalar_a_humano"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool_name }}",
+                    "rightValue": "consultar_pedido",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "outputKey": "consultar_pedido"
+            }
+          ]
+        },
+        "fallbackOutput": "none"
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000009",
+      "name": "Which Tool?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1600, 280]
+    },
+
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst toolInput = typeof input.tool_input === 'string' ? JSON.parse(input.tool_input) : input.tool_input;\n\nconst subtotal = toolInput.items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);\n\nconst nameParts = (toolInput.customer_name || '').trim().split(' ');\nconst firstName = nameParts[0] || '';\nconst lastName = nameParts.slice(1).join(' ') || '-';\n\nreturn [{\n  json: {\n    conversation_id: input.conversation_id,\n    customer_id: input.customer_id,\n    customer_name: toolInput.customer_name,\n    first_name: firstName,\n    last_name: lastName,\n    customer_phone: toolInput.customer_phone,\n    address: toolInput.address,\n    city: toolInput.city,\n    department: toolInput.department,\n    email: toolInput.email || '',\n    items: toolInput.items,\n    is_cod: toolInput.is_cod,\n    subtotal,\n    total: subtotal\n  }\n}];"
+      },
+      "id": "wf3-inline-0000-0000-000000000001",
+      "name": "Parse Order Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1820, 80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/orders",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"customer_id\": \"{{ $json.customer_id }}\",\n  \"conversation_id\": \"{{ $json.conversation_id }}\",\n  \"status\": \"pending\",\n  \"items\": {{ JSON.stringify($json.items) }},\n  \"subtotal\": {{ $json.subtotal }},\n  \"shipping_cost\": 0,\n  \"total\": {{ $json.total }},\n  \"shipping_name\": \"{{ $json.customer_name }}\",\n  \"shipping_phone\": \"{{ $json.customer_phone }}\",\n  \"shipping_address\": \"{{ $json.address }}\",\n  \"shipping_city\": \"{{ $json.city }}\",\n  \"shipping_department\": \"{{ $json.department }}\",\n  \"is_cod\": {{ $json.is_cod }},\n  \"notes\": \"Pedido desde WhatsApp Agent\"\n}",
+        "options": {}
+      },
+      "id": "wf3-inline-0000-0000-000000000002",
+      "name": "Insert Order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2040, 80]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "check-cod",
+              "leftValue": "={{ $json[0].is_cod }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "wf3-inline-0000-0000-000000000003",
+      "name": "Is COD?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2260, 80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.RESEND_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{ $env.FROM_EMAIL }}\",\n  \"to\": [\"{{ $env.INTERNAL_EMAIL }}\"],\n  \"subject\": \"🛒 NUEVO PEDIDO #{{ $node['Insert Order'].json[0].order_number }} — Contra Entrega — Crear en Dropi\",\n  \"html\": \"<h2>🛒 Nuevo Pedido #{{ $node['Insert Order'].json[0].order_number }}</h2><p>🚚 <strong>CONTRA ENTREGA</strong> — Crear con <strong>Con Recaudo</strong> en <a href='https://app.dropi.co'>app.dropi.co</a>. La transportadora cobra al entregar.</p><hr><h3>Datos del Cliente</h3><p><strong>Nombre:</strong> {{ $node['Parse Order Data'].json.first_name }} {{ $node['Parse Order Data'].json.last_name }}<br><strong>Teléfono:</strong> {{ $node['Parse Order Data'].json.customer_phone }}<br><strong>Dirección:</strong> {{ $node['Parse Order Data'].json.address }}, {{ $node['Parse Order Data'].json.city }}, {{ $node['Parse Order Data'].json.department }}</p><hr><h3>Productos</h3>{{ $node['Parse Order Data'].json.items.map(i => '<p><strong>ID Dropi:</strong> ' + i.dropi_product_id + '<br><strong>Producto:</strong> ' + i.name + '<br><strong>Cantidad:</strong> ' + i.quantity + '<br><strong>Precio:</strong> $' + new Intl.NumberFormat('es-CO').format(i.unit_price) + ' COP</p><hr>').join('') }}<p><strong>💰 Total a recaudar: ${{ new Intl.NumberFormat('es-CO').format($node['Parse Order Data'].json.total) }} COP</strong></p>\"\n}",
+        "options": {}
+      },
+      "id": "wf3-inline-0000-0000-000000000004",
+      "name": "Notify Team COD",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2480, -60]
+    },
+    {
+      "parameters": {
+        "jsCode": "const order = $node['Insert Order'].json[0];\nreturn [{\n  json: {\n    order_id: order.id,\n    order_number: order.order_number,\n    total: order.total,\n    is_cod: order.is_cod,\n    status: order.status\n  }\n}];"
+      },
+      "id": "wf3-inline-0000-0000-000000000005",
+      "name": "Return Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2480, 80]
+    },
+
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst toolInput = typeof input.tool_input === 'string' ? JSON.parse(input.tool_input) : input.tool_input;\nreturn [{\n  json: {\n    order_id: toolInput.order_id,\n    amount: toolInput.amount,\n    description: toolInput.description,\n    wa_phone: input.wa_phone\n  }\n}];"
+      },
+      "id": "wf4-inline-0000-0000-000000000001",
+      "name": "Parse MP Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1820, 320]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mercadopago.com/checkout/preferences",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.MP_ACCESS_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"items\": [{\n    \"title\": \"{{ $json.description }}\",\n    \"quantity\": 1,\n    \"unit_price\": {{ $json.amount }},\n    \"currency_id\": \"COP\"\n  }],\n  \"payer\": {\n    \"phone\": { \"number\": \"{{ $json.wa_phone }}\" }\n  },\n  \"back_urls\": {\n    \"success\": \"{{ $env.WEBHOOK_URL }}/webhook/mp-success\",\n    \"failure\": \"{{ $env.WEBHOOK_URL }}/webhook/mp-failure\"\n  },\n  \"notification_url\": \"{{ $env.WEBHOOK_URL }}/webhook/mercadopago\",\n  \"external_reference\": \"{{ $json.order_id }}\",\n  \"expires\": true,\n  \"expiration_date_to\": \"{{ new Date(Date.now() + 24*60*60*1000).toISOString() }}\"\n}",
+        "options": {}
+      },
+      "id": "wf4-inline-0000-0000-000000000002",
+      "name": "Create MP Preference",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2040, 320]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/payments",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"order_id\": \"{{ $node['Parse MP Input'].json.order_id }}\",\n  \"status\": \"pending\",\n  \"mp_preference_id\": \"{{ $json.id }}\",\n  \"mp_checkout_url\": \"{{ $json.init_point }}\",\n  \"amount\": {{ $node['Parse MP Input'].json.amount }}\n}",
+        "options": {}
+      },
+      "id": "wf4-inline-0000-0000-000000000003",
+      "name": "Save Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2260, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "const mpData = $node['Create MP Preference'].json;\nreturn [{\n  json: {\n    payment_url: mpData.init_point,\n    preference_id: mpData.id\n  }\n}];"
+      },
+      "id": "wf4-inline-0000-0000-000000000004",
+      "name": "Return Payment URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2480, 320]
+    },
+
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/products?is_active=eq.true&or=(name.ilike.*{{ encodeURIComponent($json.tool_input.query) }}*,ai_keywords.cs.{{ $json.tool_input.query }})",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000012",
+      "name": "Search Products",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 480]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/conversations?id=eq.{{ $json.conversation_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"status\": \"human_active\"}",
+        "options": {}
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000013",
+      "name": "Escalate Conversation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 640]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/orders?select=id,order_number,status,total,is_cod,created_at,items,shipping_name,shipping_city&shipping_phone=eq.{{ $json.tool_input.phone }}&order=created_at.desc&limit=5",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000019",
+      "name": "Query Orders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 800]
+    },
+
+    {
+      "parameters": {
+        "jsCode": "const prev = $node['Which Tool?'].json;\nlet toolResult = '';\n\nif (prev.tool_name === 'crear_pedido') {\n  const orderData = $input.first().json;\n  toolResult = JSON.stringify({ success: true, order_id: orderData.order_id, order_number: orderData.order_number, total: orderData.total, is_cod: orderData.is_cod, message: 'Pedido creado exitosamente' });\n} else if (prev.tool_name === 'generar_link_pago') {\n  const mpData = $input.first().json;\n  toolResult = JSON.stringify({ success: true, payment_url: mpData.payment_url, message: 'Link de pago generado' });\n} else if (prev.tool_name === 'buscar_productos') {\n  const products = $input.first().json;\n  toolResult = JSON.stringify(Array.isArray(products) ? products : [products]);\n} else if (prev.tool_name === 'escalar_a_humano') {\n  toolResult = JSON.stringify({ success: true, message: 'Conversación escalada a agente humano' });\n} else if (prev.tool_name === 'consultar_pedido') {\n  const orders = $input.first().json;\n  const orderList = Array.isArray(orders) ? orders : [];\n  toolResult = JSON.stringify(orderList.length > 0 ? orderList : { message: 'No se encontraron pedidos para este número' });\n} else {\n  toolResult = JSON.stringify({ success: false, message: 'Herramienta no reconocida' });\n}\n\nconst messages = [...prev.messages,\n  { role: 'assistant', content: [{ type: 'tool_use', id: prev.tool_use_id, name: prev.tool_name, input: prev.tool_input }] },\n  { role: 'user', content: [{ type: 'tool_result', tool_use_id: prev.tool_use_id, content: toolResult }] }\n];\n\nreturn [{\n  json: {\n    system_prompt: prev.system_prompt,\n    messages,\n    wa_phone: prev.wa_phone,\n    conversation_id: prev.conversation_id\n  }\n}];"
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000014",
+      "name": "Build Tool Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2700, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-6\",\n  \"max_tokens\": 1024,\n  \"temperature\": 0.3,\n  \"system\": {{ JSON.stringify($json.system_prompt) }},\n  \"messages\": {{ JSON.stringify($json.messages) }}\n}",
+        "options": {}
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000015",
+      "name": "Claude Final Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2920, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst replyText = response.content?.find(c => c.type === 'text')?.text || 'Listo! ¿Hay algo más en que te pueda ayudar?';\nreturn [{\n  json: {\n    reply: replyText,\n    wa_phone: $node['Build Tool Result'].json.wa_phone,\n    conversation_id: $node['Build Tool Result'].json.conversation_id\n  }\n}];"
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000016",
+      "name": "Extract Final Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3140, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $env.WA_API_VERSION }}/{{ $env.WA_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.WA_ACCESS_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.wa_phone }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": {{ JSON.stringify($json.reply) }} }\n}",
+        "options": {}
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000017",
+      "name": "Send WA Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3360, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"conversation_id\": \"{{ $node['Extract Final Reply'].json.conversation_id || $node['Parse Response'].json.conversation_id }}\",\n  \"direction\": \"outbound\",\n  \"sender_type\": \"agent\",\n  \"message_type\": \"text\",\n  \"content\": {{ JSON.stringify($node['Extract Final Reply'].json.reply || $node['Parse Response'].json.reply) }}\n}",
+        "options": {}
+      },
+      "id": "b2c3d4e5-0002-0002-0002-000000000018",
+      "name": "Save Outbound Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3580, 400]
+    }
+  ],
+  "connections": {
+    "Input": {
+      "main": [[
+        { "node": "Load History", "type": "main", "index": 0 },
+        { "node": "Load Products", "type": "main", "index": 0 },
+        { "node": "Load Config", "type": "main", "index": 0 }
+      ]]
+    },
+    "Load History": { "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]] },
+    "Load Products": { "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]] },
+    "Load Config": { "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]] },
+    "Build Prompt": { "main": [[{ "node": "Claude API", "type": "main", "index": 0 }]] },
+    "Claude API": { "main": [[{ "node": "Parse Response", "type": "main", "index": 0 }]] },
+    "Parse Response": { "main": [[{ "node": "Has Tool?", "type": "main", "index": 0 }]] },
+    "Has Tool?": {
+      "main": [
+        [{ "node": "Which Tool?", "type": "main", "index": 0 }],
+        [{ "node": "Send WA Message", "type": "main", "index": 0 }]
+      ]
+    },
+    "Which Tool?": {
+      "main": [
+        [{ "node": "Parse Order Data", "type": "main", "index": 0 }],
+        [{ "node": "Parse MP Input", "type": "main", "index": 0 }],
+        [{ "node": "Search Products", "type": "main", "index": 0 }],
+        [{ "node": "Escalate Conversation", "type": "main", "index": 0 }],
+        [{ "node": "Query Orders", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Order Data": { "main": [[{ "node": "Insert Order", "type": "main", "index": 0 }]] },
+    "Insert Order": { "main": [[{ "node": "Is COD?", "type": "main", "index": 0 }]] },
+    "Is COD?": {
+      "main": [
+        [{ "node": "Notify Team COD", "type": "main", "index": 0 }],
+        [{ "node": "Return Order", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notify Team COD": { "main": [[{ "node": "Return Order", "type": "main", "index": 0 }]] },
+    "Return Order": { "main": [[{ "node": "Build Tool Result", "type": "main", "index": 0 }]] },
+    "Parse MP Input": { "main": [[{ "node": "Create MP Preference", "type": "main", "index": 0 }]] },
+    "Create MP Preference": { "main": [[{ "node": "Save Payment", "type": "main", "index": 0 }]] },
+    "Save Payment": { "main": [[{ "node": "Return Payment URL", "type": "main", "index": 0 }]] },
+    "Return Payment URL": { "main": [[{ "node": "Build Tool Result", "type": "main", "index": 0 }]] },
+    "Search Products": { "main": [[{ "node": "Build Tool Result", "type": "main", "index": 0 }]] },
+    "Escalate Conversation": { "main": [[{ "node": "Build Tool Result", "type": "main", "index": 0 }]] },
+    "Query Orders": { "main": [[{ "node": "Build Tool Result", "type": "main", "index": 0 }]] },
+    "Build Tool Result": { "main": [[{ "node": "Claude Final Reply", "type": "main", "index": 0 }]] },
+    "Claude Final Reply": { "main": [[{ "node": "Extract Final Reply", "type": "main", "index": 0 }]] },
+    "Extract Final Reply": { "main": [[{ "node": "Send WA Message", "type": "main", "index": 0 }]] },
+    "Send WA Message": { "main": [[{ "node": "Save Outbound Message", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "whatsapp-agent" }]
+}

@@ -1,0 +1,189 @@
+{
+  "name": "WF5 - MP Payment Confirmation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mercadopago",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "e5f6a7b8-0005-0005-0005-000000000001",
+      "name": "MP Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "mercadopago-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "check-payment",
+              "leftValue": "={{ $json.body.type }}",
+              "rightValue": "payment",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "e5f6a7b8-0005-0005-0005-000000000002",
+      "name": "Is Payment?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.mercadopago.com/v1/payments/{{ $json.body.data.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.MP_ACCESS_TOKEN }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e5f6a7b8-0005-0005-0005-000000000003",
+      "name": "Get Payment Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "check-approved",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "approved",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "e5f6a7b8-0005-0005-0005-000000000004",
+      "name": "Is Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 180]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/payments?order_id=eq.{{ $json.external_reference }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"approved\",\n  \"mp_payment_id\": \"{{ $json.id }}\",\n  \"mp_status\": \"{{ $json.status }}\",\n  \"mp_payment_type\": \"{{ $json.payment_type_id }}\",\n  \"paid_at\": \"{{ new Date().toISOString() }}\",\n  \"raw_webhook\": {{ JSON.stringify($json) }}\n}",
+        "options": {}
+      },
+      "id": "e5f6a7b8-0005-0005-0005-000000000005",
+      "name": "Update Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 80]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/orders?id=eq.{{ $json[0].order_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"paid\"}",
+        "options": {}
+      },
+      "id": "e5f6a7b8-0005-0005-0005-000000000006",
+      "name": "Update Order Paid",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $env.WA_API_VERSION }}/{{ $env.WA_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.WA_ACCESS_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $node['Get Payment Details'].json.payer.phone.number }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"✅ *¡Pago recibido!*\\n\\nTu pedido #{{ $json[0].order_number }} ha sido confirmado.\\nTotal pagado: ${{ new Intl.NumberFormat('es-CO').format($node['Get Payment Details'].json.transaction_amount) }} COP\\n\\nTe avisaremos cuando sea despachado. ¡Gracias por tu compra! 🎉\"\n  }\n}",
+        "options": {}
+      },
+      "id": "e5f6a7b8-0005-0005-0005-000000000007",
+      "name": "Confirm to Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.RESEND_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"{{ $env.FROM_EMAIL }}\",\n  \"to\": [\"{{ $env.INTERNAL_EMAIL }}\"],\n  \"subject\": \"💳 PAGO CONFIRMADO — Pedido #{{ $node['Update Order Paid'].json[0].order_number }} — Crear en Dropi Sin Recaudo\",\n  \"html\": \"<h2>💳 Pago Anticipado Confirmado</h2><p>El cliente ya pagó. Crear en <a href='https://app.dropi.co'>app.dropi.co</a> con <strong>Sin Recaudo</strong>.</p><hr><p><strong>Pedido:</strong> #{{ $node['Update Order Paid'].json[0].order_number }}<br><strong>Total pagado:</strong> ${{ new Intl.NumberFormat('es-CO').format($node['Get Payment Details'].json.transaction_amount) }} COP<br><strong>Método MP:</strong> {{ $node['Get Payment Details'].json.payment_type_id }}<br><strong>MP Payment ID:</strong> {{ $node['Get Payment Details'].json.id }}</p>\"\n}",
+        "options": {}
+      },
+      "id": "e5f6a7b8-0005-0005-0005-000000000008",
+      "name": "Notify Team Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 80]
+    }
+  ],
+  "connections": {
+    "MP Webhook": { "main": [[{ "node": "Is Payment?", "type": "main", "index": 0 }]] },
+    "Is Payment?": {
+      "main": [
+        [{ "node": "Get Payment Details", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Get Payment Details": { "main": [[{ "node": "Is Approved?", "type": "main", "index": 0 }]] },
+    "Is Approved?": {
+      "main": [
+        [{ "node": "Update Payment", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Update Payment": { "main": [[{ "node": "Update Order Paid", "type": "main", "index": 0 }]] },
+    "Update Order Paid": { "main": [[{ "node": "Confirm to Customer", "type": "main", "index": 0 }]] },
+    "Confirm to Customer": { "main": [[{ "node": "Notify Team Payment", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "whatsapp-agent" }]
+}
